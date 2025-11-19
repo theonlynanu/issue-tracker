@@ -19,3 +19,53 @@ VALUES
 (2, 1, "LEAD"),
 (2, 2, "DEVELOPER")
 ;
+
+INSERT INTO issues (issue_id, project_id, issue_number, title, description, type, status, priority, reporter_id, assignee_id)
+VALUES
+(1, 1, 1, 
+	"Create Mock Data", 
+	"Mock data needs to be inserted into the database to be used for testing later on.", 
+    "TASK", 
+    "CLOSED", 
+    "HIGH", 
+    1, 2),
+    
+(2, 1, 2, 
+	"Design Triggers and Routines", 
+    "Triggers and routines need to be put in place to properly populate default fields, track history, and keep data clean and expressive.", 
+    "TASK", 
+    "IN_PROGRESS", 
+    "MEDIUM", 
+    1, 2),
+    
+(3, 2, 1, 
+	"Demo Private Project", 
+    "Private projects should be demonstrated, including their visibility to non-members, comparisons to public projects, and the importance of view roles.", 
+    "TASK", 
+    "IN_PROGRESS", 
+    "MEDIUM",
+    1, 2)
+;
+
+INSERT INTO labels (label_id, project_id, name)
+VALUES
+(1, 1, "MVP Requirement"),
+(2, 1, "Frontend"),
+(3, 2, "Private tag"), 
+(4, 2, "Main Dev")
+;
+
+INSERT INTO issue_labels (issue_id, label_id)
+VALUES
+(1, 1),
+(2, 1),
+(3, 3)
+;
+
+INSERT INTO comments (comment_id, content, issue_id, author_id)
+VALUES
+(1, "No due date, but don't put this off", 1, 1),
+(2, "Will do!", 1, 2),
+(3, "Ensure that update triggers properly update timestamps", 2, 1),
+(4, "Keep this secret!", 3, 1)
+;
