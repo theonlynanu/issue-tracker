@@ -1,0 +1,14 @@
+USE itms;
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE issue_history;
+TRUNCATE TABLE comments;
+TRUNCATE TABLE issue_labels;
+TRUNCATE TABLE labels;
+TRUNCATE TABLE issues;
+TRUNCATE TABLE project_memberships;
+TRUNCATE TABLE projects;
+TRUNCATE TABLE users;
+
+SET FOREIGN_KEY_CHECKS = 1;
