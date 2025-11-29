@@ -182,7 +182,16 @@ def create_app():
     
     # A5
     @app.route("/me", methods=["PATCH"])
+    @login_required
     def update_me():
+        """
+            Updates the user's info - either the username, first_name, or last_name.
+            Email address cannot be updated for this first version.
+            
+            Request body expects one of those three fields with a new value.
+            
+            Returns user's updated info
+        """
         user_id = get_current_user_id()
         data = request.get_json(force=True) or {}
         
@@ -242,7 +251,135 @@ def create_app():
     ####################################
     
     # P1
+    @app.route("/projects", methods=["GET"])
+    @login_required
+    def list_projects():
+        """Returns all visible projects to the logged-in user"""
+        
+        user_id = get_current_user_id()
+        conn = get_db()
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.project_id, p.project_key, p.name, p.description, p.is_public, p.created_by, p.created_at, pm.role AS user_role
+                FROM projects p
+                LEFT JOIN project_memberships pm ON p.project_id = pm.project_id AND pm.user_id = %s
+                WHERE p.is_public = 1 OR pm.role IS NOT NULL
+                ORDER BY p.project_key ASC
+                """,
+                (user_id,)
+            )
+            
+            rows = cursor.fetchall()
+            
+        return jsonify({"projects": rows}), 200
     
+    
+    # P2
+    @app.route("/projects", methods=["POST"])
+    @login_required
+    def create_project():
+        """ 
+        Create project and set current user as lead 
+        
+        Requires project_key, name, and optionally is_public and description.
+        is_public defaults to 1 if not provided
+        """
+        
+        user_id = get_current_user_id()
+        data = request.get_json(force=True) or {}
+        conn = get_db()
+        
+        project_key = data.get("project_key")
+        project_name = data.get("name")
+        project_description = data.get("description")
+        
+        if isinstance(is_public, bool):
+            is_public = 1 if is_public else 0
+        else:
+            is_public = data.get("is_public", 1) 
+        
+        if not project_key or not project_name:
+            return jsonify({"error": "Project key and name are required"}), 400
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO projects (project_key, name, description, is_public, created_by)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (project_key, project_name, project_description, is_public, user_id)
+                )
+                
+                project_id = cursor.lastrowid
+                
+                cursor.execute(
+                    """
+                    INSERT INTO project_memberships (project_id, user_id, role)
+                    VALUES (%s, %s, 'LEAD')
+                    """,
+                    (project_id, user_id)
+                )
+                
+            conn.commit()
+        
+        except IntegrityError as e:
+            conn.rollback()
+            
+            if "uq_project_key" in str(e):
+                return jsonify({"error": "Project key already exists"}), 409
+            
+            return jsonify({"error": "Unable to create project", "details": str(e)}), 400
+        
+        
+        return jsonify({
+            "message": "Project created",
+            "project": {
+                "project_id": project_id,
+                "project_key": project_key,
+                "name": project_name,
+                "description": project_description,
+                "is_public": is_public,
+                "created_by": user_id
+            }
+        }), 201
+            
+            
+    @app.route("/projects/<int:project_id>", methods=["GET"])
+    @login_required
+    def get_project(project_id):
+        """
+        Return a single project, if that project is visible to the user
+        
+        Public projects are visible to all users, while private projects are only
+        visible to members of that project.
+        """
+        user_id = get_current_user_id()
+        conn = get_db()
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.project_id, p.project_key, p.name, p.description p.is_public, p.created_by, p.created_at, pm.role AS user_role
+                FROM projects p
+                LEFT JOIN project_memberships pm ON p.project_id = pm.project_id AND pm.user_id = %s
+                WHERE p.project_id = %s AND (p.is_public = 1 OR pm.role IS NOT NULL)
+                """,
+                (user_id, project_id)
+            )
+            
+            row = cursor.fetchone()
+            
+        # If no row is returned, it means either:
+        # - project doesn't exist
+        # - project is private and user is not a member
+        if not row:
+            return jsonify({"error": "Project not found"}), 404
+        
+        return jsonify({"project": row}), 200
+            
     
     
     ############################### FINAL RETURN ###############################
