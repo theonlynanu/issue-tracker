@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, session
 from config import Config
 from db import get_db, close_db
-from auth_utils import login_required, get_current_user_id
+from auth_utils import login_required, get_current_user_id, require_project_role, get_project_visibility, get_project_role
 from pymysql.err import IntegrityError
 
 def create_app():
@@ -35,7 +35,7 @@ def create_app():
                 conn.rollback()
                 return jsonify({"error": "Could not receive table details", "details": str(e)}), 404
         
-        result = cursor.fetchall()
+            result = cursor.fetchall()
         print(result)
         return jsonify({"message": "Success"}), 200    
             
@@ -47,6 +47,7 @@ def create_app():
     # A1
     @app.route("/auth/register", methods=["POST"])
     def register():
+        """Register a new user account, given email, username, password, and first/last name"""
         data = request.get_json(force=True)
         email = data.get("email")
         username = data.get("username")
@@ -73,7 +74,7 @@ def create_app():
                 )
                 conn.commit()
                 
-            except Exception as e:
+            except IntegrityError as e:
                 conn.rollback()
                 
                 # Duplicate entry for key
@@ -167,7 +168,7 @@ def create_app():
                 FROM users
                 WHERE user_id = %s
                 """,
-                (user_id)
+                (user_id,)
             )
             
             user = cursor.fetchone()
@@ -218,7 +219,7 @@ def create_app():
         
         params.append(user_id)
         
-        sql = "UPDATE users SET " + ", ".join(fields) + "WHERE user_id = %s"
+        sql = "UPDATE users SET " + ", ".join(fields) + " WHERE user_id = %s"
         
         conn = get_db()
         
@@ -294,11 +295,18 @@ def create_app():
         project_key = data.get("project_key")
         project_name = data.get("name")
         project_description = data.get("description")
+        raw = data.get("is_public")
         
-        if isinstance(is_public, bool):
-            is_public = 1 if is_public else 0
-        else:
-            is_public = data.get("is_public", 1) 
+        if raw is None:
+            is_public = 1
+        elif isinstance(raw, bool):
+            is_public = 1 if raw else 0
+        elif isinstance(raw, int) and raw in (0, 1):
+            is_public = raw
+        elif isinstance(raw, str) and raw.lower() in ("0", "1", "true", "false"):
+            is_public = 1 if raw.lower() in ("1", "true") else 0
+        else: 
+            return jsonify({"error": "Invalid is_public value"}), 400
         
         if not project_key or not project_name:
             return jsonify({"error": "Project key and name are required"}), 400
@@ -346,7 +354,7 @@ def create_app():
             }
         }), 201
             
-            
+    # P3
     @app.route("/projects/<int:project_id>", methods=["GET"])
     @login_required
     def get_project(project_id):
@@ -362,7 +370,7 @@ def create_app():
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT p.project_id, p.project_key, p.name, p.description p.is_public, p.created_by, p.created_at, pm.role AS user_role
+                SELECT p.project_id, p.project_key, p.name, p.description, p.is_public, p.created_by, p.created_at, pm.role AS user_role
                 FROM projects p
                 LEFT JOIN project_memberships pm ON p.project_id = pm.project_id AND pm.user_id = %s
                 WHERE p.project_id = %s AND (p.is_public = 1 OR pm.role IS NOT NULL)
@@ -379,9 +387,621 @@ def create_app():
             return jsonify({"error": "Project not found"}), 404
         
         return jsonify({"project": row}), 200
+    
+    # P4
+    @app.route("/projects/<int:project_id>", methods=["PATCH"])
+    @require_project_role(["LEAD"])
+    def edit_project(project_id):
+        """
+        Allows a project lead to change the name, key, or description of a project
+        
+        project_key must be unique - throw 409 if already present in db
+        """
+        conn = get_db()
+        data = request.get_json(force=True) or {}
+        
+        new_name = data.get("name")
+        new_description = data.get("description")
+        new_key = data.get("project_key")
+        
+        if not any((new_name, new_description, new_key)):
+            return jsonify({"error": "No new attributes provided"}), 400
+        
+        fields = []
+        params = []
+        
+        if new_name is not None:
+            fields.append("name = %s")
+            params.append(new_name)
+        if new_description is not None:
+            fields.append("description = %s")
+            params.append(new_description)
+        if new_key is not None:
+            fields.append("project_key = %s")
+            params.append(new_key)
             
+        params.append(project_id)
+        
+        sql = "UPDATE projects SET " + ", ".join(fields) + " WHERE project_id = %s"
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(params))
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            if e.args[0] == 1062:
+                return jsonify({"error": "Project key already in use"}), 409
+            return jsonify({"error": "Integrity error", "details": str(e)}), 400
+        
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM projects
+                WHERE project_id = %s
+                """,
+                (project_id,)
+            )
+            project = cursor.fetchone()
+            
+        return jsonify({"project": project}), 200
+            
+    # P5
+    @app.route("/projects/<int:project_id>/visibility", methods=["PATCH"])
+    @require_project_role(["LEAD"])
+    def update_visibility(project_id):
+        data = request.get_json(force=True) or {}
+        
+        raw = data.get("is_public")
+
+        if raw is None:
+            return jsonify({"error": "is_public must be provided"}), 400
+        
+        if isinstance(raw, bool):
+            is_public = 1 if raw else 0
+            
+        elif isinstance(raw, int) and raw in (0,1):
+            is_public = raw
+            
+        elif isinstance(raw, str) and raw.lower() in ("0", "1", "true", "false"):
+            is_public = 1 if raw.lower() in ("1", "true") else 0
+            
+        else:
+            return jsonify({"error": "Invalid is_public (must be boolean or 0/1)"}), 400
+
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE projects SET is_public = %s WHERE project_id = %s
+                    """,
+                    (is_public, project_id)
+                )
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Integrity error", "details": str(e)}), 400
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """ SELECT * FROM projects WHERE project_id = %s""",
+                (project_id,)
+            )
+            project = cursor.fetchone()
+        
+        return jsonify({"project": project}), 200
+    
+    # P6
+    @app.route("/projects/<int:project_id>", methods=["DELETE"])
+    @require_project_role(["LEAD"])
+    def delete_project(project_id):
+        """Deletes a project, assuming current user is a project LEAD"""
+        conn = get_db()
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM projects WHERE project_id = %s
+                    """,
+                    (project_id,)
+                )    
+                deleted = cursor.rowcount
+                
+            if deleted == 0:
+                # Shouldn't happen unless there's an issue with DELETE CASCADE in project_memberships
+                conn.rollback()
+                return jsonify({"error": "Project not found"}), 404
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Integrity Error", "details": str(e)}), 400
+        
+        return jsonify({"success": True}), 200
+    
+    #######################################
+    #        Membership Management        #
+    #######################################
+    
+    # M1
+    @app.route("/projects/<int:project_id>/members", methods=["GET"])
+    @login_required
+    def list_project_members(project_id):
+        """Lists all members of a project"""
+        user_id = get_current_user_id()
+        vis = get_project_visibility(project_id, user_id)
+        
+        if not vis["exists"]:
+            return jsonify({"error": "Project not found"}), 404
+        
+        if not vis["visible"]:
+            return jsonify({"error": "Not authorized to access this project"}), 403
+        
+        conn = get_db()
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT pm.user_id, u.username, u.first_name, u.last_name, pm.role, pm.joined_at
+                FROM project_memberships pm JOIN users u ON u.user_id = pm.user_id
+                WHERE pm.project_id = %s
+                ORDER BY
+                    CASE pm.role
+                        WHEN 'LEAD' THEN 1
+                        WHEN 'DEVELOPER' THEN 2
+                        ELSE 3
+                    END,
+                    u.username
+                """,
+                (project_id,)
+            )
+            
+            members = cursor.fetchall()
+            
+        return jsonify({
+            "project_id": project_id,
+            "members": members
+        }), 200
+        
+    # M2
+    @app.route("/projects/<int:project_id>/members", methods=["POST"])
+    @require_project_role(["LEAD"])
+    def add_user_to_project(project_id):
+        """
+        Adds a user to a project with a given role.
+        Expects an identifier (username or email) and a role: LEAD|DEVELOPER|VIEWER
+        """
+        data = request.get_json(force=True)
+        identifier = data.get("identifier")
+        role = str(data.get("role"))
+        
+        if not identifier or not role:
+            return jsonify({"error": "Requires user identifier and role"}), 400
+        
+        if role.lower() not in ("lead", "developer", "viewer"):
+            return jsonify({"error": "Invalid role"}), 400
+        
+        role = role.upper()
+        
+        conn = get_db()
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT user_id FROM users
+                    WHERE username = %s OR email = %s
+                    """,
+                    (identifier, identifier)
+                )
+                new_user_id = cursor.fetchone()
+                if new_user_id is None:
+                    conn.rollback()
+                    return jsonify({"error": "User not found"}), 404
+                
+                new_user_id = new_user_id["user_id"]
+                
+                cursor.execute(
+                    """
+                    INSERT INTO project_memberships (project_id, user_id, role)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (project_id, new_user_id, role)
+                )
+            conn.commit()
+                
+        except IntegrityError as e:
+            conn.rollback()
+            if e.args[0] == 1062:
+                return jsonify({"error": "User is already a member of this project"}), 409
+            return jsonify({"error": "Membership update failed", "details": str(e)}), 400
+        
+        return jsonify({
+            "user_id": new_user_id,
+            "project_id": project_id,
+            "role": role
+        })
+        
+    # M3
+    @app.route("/projects/<int:project_id>/members/<int:member_id>", methods=["PATCH"])
+    @require_project_role(["LEAD"])
+    def change_member_role(project_id, member_id):
+        """
+        Changes role of an existing member in a project.
+        
+        Caller must be a project LEAD, target user must be a project member,
+        and you cannot demote the last LEAD to a non-LEAD role
+        """
+        acting_user_id = get_current_user_id()
+        data = request.get_json(force=True)
+        new_role = str(data.get("role"))
+        
+        if new_role is None:
+            return jsonify({"error": "Role is required"}), 400
+        
+        new_role = str(new_role).upper()
+        
+        if new_role not in ("LEAD", "DEVELOPER", "VIEWER"):
+            return jsonify({"error": "Invalid role"}), 400
+        
+        conn = get_db()
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT role FROM project_memberships 
+                    WHERE project_id = %s AND user_id = %s
+                    """,
+                    (project_id, member_id)
+                )
+                membership = cursor.fetchone()
+                
+                if not membership:
+                    return jsonify({"error": "User is not a member of this project"}), 404
+                
+                current_role = membership["role"]
+                
+                # Refuse to demote the last LEAD
+                if current_role == "LEAD" and new_role != "LEAD":
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*) AS lead_count FROM project_memberships
+                        WHERE project_id = %s and role='LEAD'
+                        """,
+                        (project_id,)
+                    )
+                    row = cursor.fetchone()
+                    lead_count = row["lead_count"]
+                    
+                    if lead_count <= 1:
+                        if member_id == acting_user_id:
+                            msg = "Cannot demote yourself when you are the only lead on the project"
+                        else:
+                            msg = "Cannot demote the last lead on the project"
+                            
+                        return jsonify({"error": msg}), 409
+                        
+                cursor.execute(
+                    """
+                    UPDATE project_memberships
+                    SET role = %s
+                    WHERE project_id = %s AND user_id = %s
+                    """,
+                    (new_role, project_id, member_id)
+                )
+                updated = cursor.rowcount
+                
+            conn.commit()
+        
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Could not update role", "details": str(e)}), 400
+        
+        if updated == 0:
+            # Shouldn't happen but you never know
+            return jsonify({"error": "Membership not found"}), 404
+        
+        return jsonify({
+            "message": "Role updated",
+            "project_id": project_id,
+            "user_id": member_id,
+            "new_role": new_role
+        }), 200
+        
+    # M4
+    @app.route("/projects/<int:project_id>/members/<int:member_id>", methods=["DELETE"])
+    @require_project_role(["LEAD"])
+    def remove_member_from_project(project_id, member_id):
+        """
+        Removes a member from a project. Allows self-removal, but does not allow
+        removal of the last LEAD on a project. Target must be a project member.
+        """
+        acting_user_id = get_current_user_id()
+        conn = get_db()
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT role FROM project_memberships
+                    WHERE project_id = %s AND user_id = %s
+                    """,
+                    (project_id, member_id)
+                )
+                current_membership = cursor.fetchone()
+                
+                if not current_membership:
+                    return jsonify({"error": "User is not a member of this project"}), 404
+                
+                current_role = current_membership["role"]
+                
+                if current_role == "LEAD":
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*) AS lead_count FROM project_memberships
+                        WHERE project_id = %s AND role='LEAD'
+                        """,
+                        (project_id,)
+                    )
+                    row = cursor.fetchone()
+                    lead_count = row["lead_count"]
+                    
+                    if lead_count <= 1:
+                        if member_id == acting_user_id:
+                            msg = "Cannot leave a project as the last lead"
+                        else:
+                            msg = "Cannot remove the last lead on the project"
+
+                        return jsonify({"error": msg}), 409
+                    
+                # Check for issues assigned to removed user
+                cursor.execute(
+                    """
+                    UPDATE issues
+                    SET assignee_id = NULL
+                    WHERE project_id = %s AND assignee_id = %s
+                    """,
+                    (project_id, member_id)
+                )
+                
+                cursor.execute(
+                    """
+                    DELETE FROM project_memberships WHERE project_id = %s AND user_id = %s
+                    """,
+                    (project_id, member_id)
+                )
+                deleted = cursor.rowcount
+
+            if deleted == 0:
+                conn.rollback()
+                return jsonify({"error": "Membership not found"}), 404
+
+            conn.commit()
+                
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Could not remove member from project", "details": str(e)}), 400
+        
+        
+        return jsonify({
+            "message": "Member removed from project",
+            "user_id": member_id,
+            "project_id": project_id
+        })
+        
+    
+    ################################
+    #       Issues & History       #
+    ################################
+    
+    # I1
+    @app.route("/projects/<int:project_id>/issues", methods=["GET"])
+    @login_required
+    def show_project_issues(project_id):
+        user_id = get_current_user_id()
+        vis = get_project_visibility(project_id, user_id)
+        
+        if not vis["exists"]:
+            return jsonify({"error": "Project not found"}), 404
+        
+        if not vis["visible"]:
+            return jsonify({"error": "Not authorized to access this project"}), 403
+        
+        conn = get_db()
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT issue_number, issue_id, title, description, type, status, priority, reporter_id, assignee_id, due_date, created_at, updated_at
+                FROM issues WHERE project_id = %s
+                ORDER BY issue_number ASC
+                """,
+                (project_id,)
+            )
+            
+            issues = cursor.fetchall()
+            
+            if not issues:
+                return jsonify({"project_id": project_id, "issues": []}), 200
+            
+            issue_ids = [issue["issue_id"] for issue in issues]
+            
+            placeholders = ", ".join(["%s"] * len(issue_ids))
+            cursor.execute(
+                f"""
+                SELECT il.issue_id, l.label_id, l.name FROM issue_labels il
+                JOIN labels l on l.label_id = il.label_id
+                WHERE il.issue_id IN ({placeholders})
+                ORDER BY l.name ASC
+                """,
+                issue_ids       # This is still parameterized, even if it doesn't look it right away
+            )
+            label_rows = cursor.fetchall()
+          
+        labels_by_issue_id = {}
+        
+        for row in label_rows:
+            issue_id = row["issue_id"]  
+            labels_by_issue_id.setdefault(issue_id, []).append({
+                "label_id": row["label_id"],
+                "name": row["name"]
+            })
+            
+        for issue in issues:
+            iid = issue["issue_id"]
+            issue["labels"] = labels_by_issue_id.get(iid, [])
+            
+            
+            
+        return jsonify({
+            "project_id": project_id,
+            "issues": issues
+        }), 200
     
     
+    # I2
+    @app.route("/projects/<int:project_id>/issues", methods=["POST"])
+    @require_project_role(["LEAD", "DEVELOPER", "VIEWER"])
+    def create_issue(project_id):
+        """Create an issue under a project
+        
+        Expects body shape:
+        {
+            "title": "Title"
+            "description": [optional],
+            "type": "BUG"| "FEATURE"|"TASK"|"OTHER", [optional]
+            "priority": "LOW"|"MEDIUM"|"HIGH"|"CRITICAL", [optional]
+            "assignee_id": 2,   [optional - must be LEAD or DEVELOPER]
+            "due_date": "YYYY-MM-DD", [optional]
+            "labels": [label_ids], [optional]
+        }
+        
+        - Caller must be a member of the project
+        - title is required
+        - status starts as OPEN
+        - reporter_id set to current user
+        - assignee_id is also optional
+        - labels is a list of label_ids
+        - issue_number is allocated per-project
+        """
+        user_id = get_current_user_id()
+        data = request.get_json(force=True)
+        
+        title = data.get("title")
+        description = data.get("description")
+        issue_type = (data.get("type") or "TASK").upper()
+        priority = (data.get("priority") or "MEDIUM").upper()
+        assignee_id = data.get("assignee_id")
+        due_date = data.get("due_date") # Optional YYYY-MM-DD
+        labels = data.get("labels") or []
+        
+        if not title:
+            return jsonify({"error": "Title is required"}), 400
+        
+        valid_types = {"BUG", "FEATURE", "TASK", "OTHER"}
+        if issue_type not in valid_types:
+            return jsonify({"error": "Invalid type", "allowed": list(valid_types)}), 400
+        
+        valid_priorities = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+        if priority not in valid_priorities:
+            return jsonify({"error": "Invalid priority", "allowed": list(valid_priorities)}), 400
+        
+        if assignee_id is not None:
+            try:
+                assignee_id = int(assignee_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "assignee_id must be an integer"}), 400
+        
+            role = get_project_role(project_id, assignee_id)
+            if role not in ("LEAD", "DEVELOPER"):
+                return jsonify({"error": "Can only assign a LEAD or DEVELOPER to an issue"}), 400
+        
+        if not isinstance(labels, list):
+            return jsonify({"error": "labels must be an array of label_ids"}), 400
+        
+        conn = get_db()
+        
+        try:
+            with conn.cursor() as cursor:
+                if labels:
+                    placeholders = ", ".join(["%s"] * len(labels))
+                    cursor.execute(
+                        f"""
+                        SELECT label_id 
+                        FROM labels WHERE project_id = %s AND label_id IN ({placeholders})
+                        """,
+                        [project_id, *labels]
+                    )
+                    
+                    valid_label_ids = {row["label_id"] for row in cursor.fetchall()}
+                    missing = set(labels) - valid_label_ids
+                    if missing:
+                        return jsonify({
+                            "error": "Some labels do not belong to this project",
+                            "invalid_label_ids": sorted(missing)
+                        }), 400
+                        
+                cursor.callproc(
+                    "sp_create_issue",
+                    (
+                        project_id,
+                        title,
+                        description,
+                        issue_type,
+                        priority,
+                        user_id,
+                        assignee_id,
+                        due_date
+                    )
+                )
+    
+                # Since pymysql doesn't have OUT/INOUT for callproc()
+                cursor.execute("SELECT LAST_INSERT_ID() AS issue_id")
+                row = cursor.fetchone()
+                if not row or not row["issue_id"]:
+                    raise RuntimeError("sp_create_issue did not produce an insert id")
+                issue_id = row["issue_id"]
+                
+                # Attach labels
+                if labels:
+                    cursor.executemany(
+                        """
+                        INSERT INTO issue_labels (issue_id, label_id)
+                        VALUES (%s, %s)
+                        """,
+                        [(issue_id, lid) for lid in labels]
+                    )
+                    
+                cursor.execute(
+                    """
+                    SELECT issue_id, project_id, issue_number, title, description,
+                    type, status, priority, reporter_id, assignee_id, due_date, created_at, updated_at
+                    FROM issues WHERE issue_id = %s
+                    """,
+                    (issue_id,)
+                )
+                
+                issue = cursor.fetchone()
+                
+            conn.commit()
+            
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Issue creation failed", "details": str(e)}), 400
+        except Exception as e:
+            conn.rollback()
+            return jsonify({"error": "Unexpected error during issue creation", "details": str(e)}), 500
+        
+        issue["labels"] = [{"label_id": lid} for lid in labels]
+        
+        return jsonify({
+            "message": "Issue created",
+            "issue": issue
+        }), 201
+                
     ############################### FINAL RETURN ###############################
     return app
         
