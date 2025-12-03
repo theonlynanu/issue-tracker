@@ -142,6 +142,7 @@ def create_app():
         if not bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8')):
             return jsonify({"error": "Invalid credentials"}), 401   # Avoid exposing whether username was not found or if password was incorrect
         
+        session.clear()
         session["user_id"] = user["user_id"]
         
         user.pop("password_hash", None)
@@ -718,8 +719,8 @@ def create_app():
             return jsonify({"error": "Could not update role", "details": str(e)}), 400
         
         if updated == 0:
-            # Shouldn't happen but you never know
-            return jsonify({"error": "Membership not found"}), 404
+            # Occurs if membership is changed to the same
+            return jsonify({"message": "User already possesses that role"}), 200
         
         return jsonify({
             "message": "Role updated",
