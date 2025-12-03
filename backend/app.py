@@ -1,7 +1,9 @@
-from flask import Flask, request, jsonify, session, Response
+from flask import Flask, request, jsonify, session
 from config import Config
 from db import get_db, close_db
-from auth_utils import login_required, get_current_user_id, require_project_role, get_project_visibility, get_project_role, is_visible_to_user, attach_labels_to_issues, can_modify_issue, fetch_issue_or_404, ensure_issue_visible
+from auth_utils import (login_required, get_current_user_id, require_project_role, 
+                        get_project_visibility, get_project_role, is_visible_to_user, 
+                        can_modify_issue, fetch_issue, ensure_issue_visible, fetch_comment)
 from pymysql.err import IntegrityError
 
 def create_app():
@@ -49,7 +51,7 @@ def create_app():
         
             result = cursor.fetchall()
         print(result)
-        return jsonify({"message": "Success"}), 200    
+        return jsonify({"message": "Success"}), 200   
             
     
     ############################################
@@ -739,6 +741,7 @@ def create_app():
         
         try:
             with conn.cursor() as cursor:
+                cursor.execute("SET @current_user_id := %s", (acting_user_id,))
                 cursor.execute(
                     """
                     SELECT role FROM project_memberships
@@ -943,6 +946,7 @@ def create_app():
         
         try:
             with conn.cursor() as cursor:
+                cursor.execute("SET @current_user_id := %s", (user_id,))
                 if labels:
                     placeholders = ", ".join(["%s"] * len(labels))
                     cursor.execute(
@@ -1012,7 +1016,7 @@ def create_app():
             conn.rollback()
             return jsonify({"error": "Unexpected error during issue creation", "details": str(e)}), 500
         
-        issue["labels"] = [{"label_id": lid} for lid in labels]
+        issue = fetch_issue(issue_id, add_labels=True)
         
         return jsonify({
             "message": "Issue created",
@@ -1024,20 +1028,17 @@ def create_app():
     @login_required
     def get_issue_details(issue_id: int):
         user_id = get_current_user_id()
-        conn = get_db()
         
-        issue = fetch_issue_or_404(issue_id)
-           
-        if isinstance(issue, Response):
-            return issue
+        issue = fetch_issue(issue_id, add_labels=True)
+            
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
         
-        vis = ensure_issue_visible(issue, user_id)
-        if vis:
-            return vis
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
         
-        issue = attach_labels_to_issues(conn, [issue])
-        issue_with_labels = issue[0]
-        return jsonify({"issue": issue_with_labels}), 200
+        return jsonify({"issue": issue}), 200
         
         
     # I4
@@ -1093,7 +1094,7 @@ def create_app():
             if new_type not in valid_types:
                 return jsonify({
                     "error": "Invalid type",
-                    "allowed": list(valid_types),
+                    "allowed": sorted(list(valid_types)),
                 }), 400
             fields.append("type = %s")
             params.append(new_type)
@@ -1103,7 +1104,7 @@ def create_app():
             if new_priority not in valid_priorities:
                 return jsonify({
                     "error": "Invalid priority",
-                    "allowed": list(valid_priorities),
+                    "allowed": sorted(list(valid_priorities)),
                 }), 400
             fields.append("priority = %s")
             params.append(new_priority)
@@ -1113,7 +1114,7 @@ def create_app():
             if new_status not in valid_statuses:
                 return jsonify({
                     "error": "Invalid status",
-                    "allowed": list(valid_statuses),
+                    "allowed": sorted(list(valid_statuses)),
                 }), 400
             fields.append("status = %s")
             params.append(new_status)
@@ -1131,9 +1132,9 @@ def create_app():
         sql = "UPDATE issues SET " + ", ".join(fields) + " WHERE issue_id = %s"
         
         
-        issue = fetch_issue_or_404(issue_id)
-        if isinstance(issue, Response):
-            return issue
+        issue = fetch_issue(issue_id)
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
         
         visibility_error = ensure_issue_visible(issue, user_id)
         if visibility_error:
@@ -1146,6 +1147,7 @@ def create_app():
         
         try:
             with conn.cursor() as cursor:
+                cursor.execute("SET @current_user_id := %s", (user_id,))
                 cursor.execute(sql, tuple(params))
                 cursor.execute(
                     """
@@ -1214,6 +1216,7 @@ def create_app():
             
         try:
             with conn.cursor() as cursor:
+                cursor.execute("SET @current_user_id := %s", (user_id,))
                 cursor.execute(
                     """
                     UPDATE issues
@@ -1246,21 +1249,526 @@ def create_app():
     @login_required
     def get_issue_history(issue_id: int):
         user_id = get_current_user_id()
-        conn = get_db()
         
-        issue = fetch_issue_or_404(issue_id)
-        if isinstance(issue, Response):
-            return issue
+        issue = fetch_issue(issue_id, add_labels=True)
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
         
         visibility_error = ensure_issue_visible(issue, user_id)
         if visibility_error:
             return visibility_error
         
+        conn = get_db()
         with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM issue_history WHERE issue_id = %s
+                ORDER BY changed_at ASC
+                """,
+                (issue_id,)
+            )
+            history = cursor.fetchall()
+        
+        return jsonify({"issue_id": issue_id, "history": history}), 200
             
+    ########################        
+    #        Labels        #
+    ########################        
+    
+    # L1
+    @app.route("/projects/<int:project_id>/labels", methods=["GET"])
+    @login_required
+    def get_project_labels(project_id):
+        """
+        Gets all labels associated with a given project
+        """
+        user_id = get_current_user_id()
         
+        visibility = get_project_visibility(project_id, user_id)
+        if not visibility["exists"]:
+            return jsonify({"error": "Project not found"}), 404
         
+        if not visibility["visible"]:
+            return jsonify({"error": "Not authorized to access this project"}), 403
+        
+        conn = get_db()
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT label_id, name, project_id
+                FROM labels
+                WHERE project_id = %s
+                ORDER BY name ASC
+                """,
+                (project_id,)
+            )
+            labels = cursor.fetchall()
+            
+        return jsonify({"project_id": project_id, "labels": labels}), 200
+    
+    # L2
+    @app.route("/projects/<int:project_id>/labels", methods=["POST"])
+    @require_project_role(["LEAD"])
+    def add_label_to_project(project_id: int):
+        """
+        Create a new label for a given project
+        
+        Body:
+        {
+            "name": "<name>"
+        }
+        
+        Requires caller to be a project LEAD, and enforces per-project uniqueness on (project_id, name)
+        """
+        data = request.get_json(force=True)
+        name = data.get("name")
+        
+        if not name:
+            return jsonify({"error": "Label name required"}), 400
+        
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO labels (name, project_id)
+                    VALUES (%s, %s)
+                    """,
+                    (name, project_id)
+                )
+                label_id = cursor.lastrowid
                 
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            
+            if e.args[0] == 1062:
+                return jsonify({"error": "Label already exists with that name"}), 409
+            return jsonify({"error": "Failed to create label", "details": str(e)}), 400
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT label_id, project_id, name
+                FROM labels
+                WHERE label_id = %s
+                """,
+                (label_id,)
+            )
+            label = cursor.fetchone()
+        
+        return jsonify({"project_id": project_id, "label": label}), 201
+    
+    
+    # L3
+    @app.route("/projects/<int:project_id>/labels/<int:label_id>", methods=["PATCH"])
+    @require_project_role(["LEAD"])
+    def edit_project_label(project_id: int, label_id: int):
+        """
+        Changes the name of a project's label.
+        
+        Body:
+        {
+            "name": "<name>"
+        }
+        
+        Enforces name-collision restraint
+        """
+        data = request.get_json(force=True)
+        new_name = data.get("name")
+        
+        if not new_name:
+            return jsonify({"error": "Label name required"}), 400
+        
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE labels
+                    SET name=%s WHERE label_id=%s AND project_id=%s
+                    """,
+                    (new_name, label_id, project_id)
+                )
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    return jsonify({"error": "Label not found"}), 404
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            
+            if e.args[0] == 1062:
+                return jsonify({"error": "Label already exists with that name"}), 409
+            return jsonify({"error": "Unable to update label name", "details": str(e)}), 400
+        
+        return jsonify({"project_id": project_id, "label_id": label_id, "name": new_name}), 200
+    
+    
+    # L4
+    @app.route("/projects/<int:project_id>/labels/<int:label_id>", methods=["DELETE"])
+    @require_project_role(["LEAD"])
+    def delete_project_label(project_id: int, label_id: int):
+        """
+        Remove a label from a project. As per DB CASCADE, this will also remove 
+        this label from all issues in the project that currently have it.
+        """
+        conn = get_db()
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM labels WHERE project_id=%s AND label_id=%s
+                    """,
+                    (project_id, label_id)
+                )
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    return jsonify({"error": "Label not found"}), 404
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Unable to remove label from project", "details": str(e)}), 400
+        
+        return jsonify({"success": True}), 200
+    
+    
+    # L5
+    @app.route("/issues/<int:issue_id>/labels", methods=["POST"])
+    @login_required
+    def add_label_to_issue(issue_id: int):
+        """
+        Add existing project label to an issue.
+        
+        Requires that label exists in project, and that user is either a project
+        LEAD or the issue assignee. No duplicate labels on an issue.
+        
+        Body:
+        {
+            "label_id": <label_id>
+        }
+        """
+        user_id = get_current_user_id()
+        data = request.get_json(force=True)
+        
+        raw_label_id = data.get("label_id")
+        if raw_label_id is None:
+            return jsonify({"error": "label_id is required"}), 400
+        
+        try:
+            label_id = int(raw_label_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "label_id must be an integer"}), 400
+        
+        conn = get_db()
+        
+        issue = fetch_issue(issue_id)
+        
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        project_id = issue["project_id"]
+        
+        user_role = get_project_role(project_id, user_id)
+        if not can_modify_issue(issue, user_id, user_role):
+            return jsonify({"error": "Insufficient permissions to modify this issue"}), 403
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT label_id, project_id, name
+                    FROM labels
+                    WHERE label_id = %s
+                    """,
+                    (label_id,)
+                )
+                label = cursor.fetchone()
+                
+                if not label or label["project_id"] != project_id:
+                    return jsonify({"error": "Label not found in this project"}), 404
+                
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO issue_labels (issue_id, label_id)
+                        VALUES (%s, %s)
+                        """,
+                        (issue_id, label_id)
+                    )
+                except IntegrityError as e:
+                    conn.rollback()
+                    if e.args[0] == 1062:
+                        return jsonify({
+                            "error": "Label already attached to this issue",
+                            "label_id": label_id,
+                            "issue_id": issue_id
+                        }), 409
+                    return jsonify({"error": "Failed to attach label", "details": str(e)}), 400
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Failed to attach label", "details": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": "Unexpected error while attaching label", "details": str(e)}), 500
+        
+        updated_issue = fetch_issue(issue_id, add_labels=True)
+        
+        return jsonify({"message": "label attached", "issue": updated_issue}), 200
+    
+    
+    # L6
+    @app.route("/issues/<int:issue_id>/labels/<int:label_id>", methods=["DELETE"])
+    @login_required
+    def remove_label_from_issue(issue_id: int, label_id: int):
+        """
+        Remove a label from an issue, provided it is already present on that issue.
+        """
+        user_id = get_current_user_id()
+        
+        issue = fetch_issue(issue_id)
+        
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        project_id = issue["project_id"]
+        
+        user_role = get_project_role(project_id, user_id)
+        if not can_modify_issue(issue, user_id, user_role):
+            return jsonify({"error": "Insufficient permissions to modify this issue"}), 403
+        
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM issue_labels
+                    WHERE issue_id = %s AND label_id = %s
+                    """,
+                    (issue_id, label_id)
+                )
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    return jsonify({"error": "Label not found on this issue"}), 404
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return jsonify({"error": "Failed to remove label", "details": str(e)}), 400
+        
+        return jsonify({"success": True}), 200
+    
+    
+    ##########################
+    #        COMMENTS        #
+    ##########################
+    
+    # C1
+    @app.route("/issues/<int:issue_id>/comments", methods=["GET"])
+    @login_required
+    def list_issue_comments(issue_id: int):
+        """
+        Returns all comments on a given issue. Returns empty list if no comments 
+        yet exist under the issue. 
+        """
+        user_id = get_current_user_id()
+        
+        issue = fetch_issue(issue_id)
+        
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        conn = get_db()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM comments WHERE issue_id = %s
+                ORDER BY created_at ASC
+                """,
+                (issue_id,)
+            )
+            comments = cursor.fetchall()
+            
+        return jsonify({"issue_id": issue_id, "comments": comments}), 200
+        
+            
+    # C2
+    @app.route("/issues/<int:issue_id>/comments", methods=["POST"])
+    @login_required
+    def post_comment(issue_id: int):
+        """
+        Post a comment to an issue.
+        
+        Body:
+        {
+            "content": "<CONTENT>"
+        }
+        """
+        user_id = get_current_user_id()
+        data = request.get_json(force=True)
+        content = (data.get('content') or "").strip()   # Trims whitespace and prevent all-whitespace comments
+        
+        if not content:
+            return jsonify({"error": "Comment text cannot be empty"}), 400
+        
+        issue = fetch_issue(issue_id)
+        
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO comments (content, author_id, issue_id)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (content, user_id, issue_id)
+                )
+                comment_id = cursor.lastrowid
+                
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Unable to add comment", "details": str(e)}), 400
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM comments
+                WHERE comment_id = %s
+                """,
+                (comment_id,)
+            )
+            comment = cursor.fetchone()
+        
+        return jsonify({"comment": comment}), 201
+    
+    
+    # C3
+    @app.route("/comments/<int:comment_id>", methods=["PATCH"])
+    @login_required
+    def edit_comment(comment_id: int):
+        """
+        Edits a comment, only if the user is the author of that comment
+        
+        Body: 
+        {
+            "content": "<content>"    
+        }
+        """
+        user_id = get_current_user_id()
+        data = request.get_json(force=True)
+        new_content = (data.get("content") or "").strip()
+        
+        if not new_content:
+            return jsonify({"error": "Comment text cannot be empty"}), 400
+        
+        
+        comment = fetch_comment(comment_id)
+        if not comment:
+            return jsonify({"error": "Comment not found"}), 404
+        
+        issue = fetch_issue(comment["issue_id"])
+        if not issue:       # Should not happen unless DB consistency fails
+            return jsonify({"error": "Parent issue not found"}), 404
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        if user_id != comment["author_id"]:
+            return jsonify({"error": "Insufficient permissions to edit comment"}), 403
+        
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE comments 
+                    SET content = %s 
+                    WHERE comment_id = %s
+                    """,
+                    (new_content, comment_id)
+                )
+                
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Unable to update comment", "details": str(e)}), 400
+        
+        updated = fetch_comment(comment_id)
+        
+        return jsonify({"comment": updated}), 200
+    
+    
+    # C4
+    @app.route("/comments/<int:comment_id>", methods=["DELETE"])
+    @login_required
+    def delete_comment(comment_id):
+        """
+        Deletes a comment from an issue. Can only be carried out by the comment
+        author, or a project lead.
+        """
+        user_id = get_current_user_id()
+        
+        comment = fetch_comment(comment_id)
+        if not comment:
+            return jsonify({"error": "Comment not found"}), 404
+        
+        issue = fetch_issue(comment["issue_id"])
+        if not issue:
+            return jsonify({"error": "Parent issue not found"}), 404
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        project_id = issue["project_id"]
+        user_role = get_project_role(project_id, user_id)
+        
+        if user_id != comment["author_id"] and user_role != "LEAD":
+            return jsonify({"error": "Insufficient permissions to delete comment"}), 403
+        
+        conn = get_db()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM comments
+                    WHERE comment_id = %s
+                    """,
+                    (comment_id,)
+                )
+                if cursor.rowcount == 0:
+                    conn.rollback()     # Should literally never happen, but to be safe
+                    return jsonify({"error": "Comment not found"}), 404
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Unable to delete comment", "details": str(e)}), 400
+        
+        return jsonify({"success": True}), 200
+        
+        
+        
     ############################### FINAL RETURN ###############################
     return app
         
