@@ -108,7 +108,7 @@ def is_visible_to_user(project_id: int, user_id: int):
         return (True, 0)
     
 
-def attach_labels_to_issues(conn: Connection[DictCursor], issues):
+def attach_labels_to_issues(conn, issues):
     """
     Returns a copy of a list of issue objects with attached label_id and label_name 
     using a DictCursor connection object.
