@@ -1,10 +1,22 @@
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify, session, Response
 from config import Config
 from db import get_db, close_db
-from auth_utils import login_required, get_current_user_id, require_project_role, get_project_visibility, get_project_role
+from auth_utils import login_required, get_current_user_id, require_project_role, get_project_visibility, get_project_role, is_visible_to_user, attach_labels_to_issues, can_modify_issue, fetch_issue_or_404, ensure_issue_visible
 from pymysql.err import IntegrityError
 
 def create_app():
+    """
+    Application factory, not necessary to be a factory but could be nice for testing.
+    
+    This application DOES use server-side SQL rather than solely relying on database
+    procedures and routines. The sheer number of unique operations required for validation,
+    rule verification/enforcement, and general database updates seems intractable to 
+    implement entirely on the DB side. Considering that API calls that use ORMs or protected
+    SQL commands is industry standard, I don't see this as an issue. 
+    
+    Note that I rely on the safety provided by cursor.execute(), which allows user-defined
+    arguments to be sanitized prior to request/query assembly, preventing SQL injection.
+    """
     app = Flask(__name__)
     app.config.from_object(Config)
     
@@ -357,7 +369,7 @@ def create_app():
     # P3
     @app.route("/projects/<int:project_id>", methods=["GET"])
     @login_required
-    def get_project(project_id):
+    def get_project(project_id: int):
         """
         Return a single project, if that project is visible to the user
         
@@ -391,7 +403,7 @@ def create_app():
     # P4
     @app.route("/projects/<int:project_id>", methods=["PATCH"])
     @require_project_role(["LEAD"])
-    def edit_project(project_id):
+    def edit_project(project_id: int):
         """
         Allows a project lead to change the name, key, or description of a project
         
@@ -450,7 +462,7 @@ def create_app():
     # P5
     @app.route("/projects/<int:project_id>/visibility", methods=["PATCH"])
     @require_project_role(["LEAD"])
-    def update_visibility(project_id):
+    def update_visibility(project_id: int):
         data = request.get_json(force=True) or {}
         
         raw = data.get("is_public")
@@ -496,7 +508,7 @@ def create_app():
     # P6
     @app.route("/projects/<int:project_id>", methods=["DELETE"])
     @require_project_role(["LEAD"])
-    def delete_project(project_id):
+    def delete_project(project_id: int):
         """Deletes a project, assuming current user is a project LEAD"""
         conn = get_db()
         
@@ -528,16 +540,19 @@ def create_app():
     # M1
     @app.route("/projects/<int:project_id>/members", methods=["GET"])
     @login_required
-    def list_project_members(project_id):
+    def list_project_members(project_id: int):
         """Lists all members of a project"""
         user_id = get_current_user_id()
-        vis = get_project_visibility(project_id, user_id)
         
-        if not vis["exists"]:
-            return jsonify({"error": "Project not found"}), 404
+        visible, err = is_visible_to_user(project_id, user_id)
+        if not visible:
+            if err == 404:
+                return jsonify({"error": "Project not found"}), 404
+            elif err == 403:
+                return jsonify({"error": "Not authorized to access this project"}), 403
+            else:
+                return jsonify({"error": "Unable to verify project membership/visibility"}), 400
         
-        if not vis["visible"]:
-            return jsonify({"error": "Not authorized to access this project"}), 403
         
         conn = get_db()
         
@@ -568,7 +583,7 @@ def create_app():
     # M2
     @app.route("/projects/<int:project_id>/members", methods=["POST"])
     @require_project_role(["LEAD"])
-    def add_user_to_project(project_id):
+    def add_user_to_project(project_id: int):
         """
         Adds a user to a project with a given role.
         Expects an identifier (username or email) and a role: LEAD|DEVELOPER|VIEWER
@@ -627,7 +642,7 @@ def create_app():
     # M3
     @app.route("/projects/<int:project_id>/members/<int:member_id>", methods=["PATCH"])
     @require_project_role(["LEAD"])
-    def change_member_role(project_id, member_id):
+    def change_member_role(project_id: int, member_id: int):
         """
         Changes role of an existing member in a project.
         
@@ -714,7 +729,7 @@ def create_app():
     # M4
     @app.route("/projects/<int:project_id>/members/<int:member_id>", methods=["DELETE"])
     @require_project_role(["LEAD"])
-    def remove_member_from_project(project_id, member_id):
+    def remove_member_from_project(project_id: int, member_id: int):
         """
         Removes a member from a project. Allows self-removal, but does not allow
         removal of the last LEAD on a project. Target must be a project member.
@@ -800,15 +815,17 @@ def create_app():
     # I1
     @app.route("/projects/<int:project_id>/issues", methods=["GET"])
     @login_required
-    def show_project_issues(project_id):
+    def show_project_issues(project_id: int):
         user_id = get_current_user_id()
-        vis = get_project_visibility(project_id, user_id)
+        visible, err = is_visible_to_user(project_id, user_id)
+        if not visible:
+            if err == 404:
+                return jsonify({"error": "Project not found"}), 404
+            elif err == 403:
+                return jsonify({"error": "Not authorized to access this project"}), 403
+            else:
+                return jsonify({"error": "Unable to verify project membership/visibility"}), 400
         
-        if not vis["exists"]:
-            return jsonify({"error": "Project not found"}), 404
-        
-        if not vis["visible"]:
-            return jsonify({"error": "Not authorized to access this project"}), 403
         
         conn = get_db()
         
@@ -865,7 +882,7 @@ def create_app():
     # I2
     @app.route("/projects/<int:project_id>/issues", methods=["POST"])
     @require_project_role(["LEAD", "DEVELOPER", "VIEWER"])
-    def create_issue(project_id):
+    def create_issue(project_id: int):
         """Create an issue under a project
         
         Expects body shape:
@@ -1001,6 +1018,248 @@ def create_app():
             "message": "Issue created",
             "issue": issue
         }), 201
+    
+    # I3
+    @app.route("/issues/<int:issue_id>", methods=["GET"])
+    @login_required
+    def get_issue_details(issue_id: int):
+        user_id = get_current_user_id()
+        conn = get_db()
+        
+        issue = fetch_issue_or_404(issue_id)
+           
+        if isinstance(issue, Response):
+            return issue
+        
+        vis = ensure_issue_visible(issue, user_id)
+        if vis:
+            return vis
+        
+        issue = attach_labels_to_issues(conn, [issue])
+        issue_with_labels = issue[0]
+        return jsonify({"issue": issue_with_labels}), 200
+        
+        
+    # I4
+    @app.route("/issues/<int:issue_id>", methods=["PATCH"])
+    @login_required
+    def edit_issue(issue_id: int):
+        """
+        Edits an existing issue in one or more of the following fields:
+        - Title
+        - Description
+        - Type
+        - Priority
+        - Due_date
+        - Status
+        
+        Only a project LEAD or the ASSIGNED developer ('assignee') may edit an issue's details
+        
+        I expect this endpoint to be hit often, as it's more of less the core of the application,
+        so I'm trying to minimize the cost of roundtrip checks while still maintaining functionality
+        """
+        user_id = get_current_user_id()
+        data = request.get_json(force=True)
+        conn = get_db()
+        
+        new_title = data.get("title")
+        new_description = data.get("description")
+        new_type = data.get("type")
+        new_priority = data.get("priority")
+        new_due_date = data.get("due_date")
+        new_status = data.get("status")
+        
+        
+        if not any([new_title, new_description, new_type, new_priority, new_due_date, new_status]):
+            return jsonify({"error": "No valid fields for change provided"}), 400
+        
+        valid_types = {"BUG", "FEATURE", "TASK", "OTHER"}
+        valid_priorities = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+        valid_statuses = {"OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"}
+        
+        fields = []
+        params = []
+        
+        if new_title is not None:
+            fields.append("title = %s")
+            params.append(new_title)
+            
+        if new_description is not None:
+            fields.append("description = %s")
+            params.append(new_description)
+
+        if new_type is not None:
+            new_type = str(new_type).upper()
+            if new_type not in valid_types:
+                return jsonify({
+                    "error": "Invalid type",
+                    "allowed": list(valid_types),
+                }), 400
+            fields.append("type = %s")
+            params.append(new_type)
+
+        if new_priority is not None:
+            new_priority = str(new_priority).upper()
+            if new_priority not in valid_priorities:
+                return jsonify({
+                    "error": "Invalid priority",
+                    "allowed": list(valid_priorities),
+                }), 400
+            fields.append("priority = %s")
+            params.append(new_priority)
+
+        if new_status is not None:
+            new_status = str(new_status).upper()
+            if new_status not in valid_statuses:
+                return jsonify({
+                    "error": "Invalid status",
+                    "allowed": list(valid_statuses),
+                }), 400
+            fields.append("status = %s")
+            params.append(new_status)
+
+        if new_due_date is not None:
+            # Let MySQL enforce DATE format
+            fields.append("due_date = %s")
+            params.append(new_due_date)
+
+        # Second sanity check
+        if not fields:
+            return jsonify({"error": "No valid fields to update"}), 400
+        
+        params.append(issue_id)
+        sql = "UPDATE issues SET " + ", ".join(fields) + " WHERE issue_id = %s"
+        
+        
+        issue = fetch_issue_or_404(issue_id)
+        if isinstance(issue, Response):
+            return issue
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        project_id = issue["project_id"]
+        role = get_project_role(project_id, user_id)
+        if not can_modify_issue(issue, user_id, role):
+            return jsonify({"error": "Insufficient permission to modify this issue"}), 403
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(params))
+                cursor.execute(
+                    """
+                    SELECT * FROM issues WHERE issue_id = %s
+                    """,
+                    (issue_id,)
+                )
+                updated_issue = cursor.fetchone()
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Issue update failed", "details": str(e)}), 400
+        
+        return jsonify({"issue": updated_issue}), 200
+    
+    
+    @app.route("/issues/<int:issue_id>/assignee", methods=["PATCH"])
+    @login_required
+    def update_issue_assignee(issue_id: int):
+        """
+        Change the assigned LEAD/DEVELOPER on an issue. 
+        
+        Expects 'assignee_id', which can be null to unassign an issue
+        
+        Only a LEAD can reassign an issue
+        """
+        user_id = get_current_user_id()
+        conn = get_db()
+        
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT issue_id, project_id, assignee_id
+                FROM issues
+                WHERE issue_id = %s
+                """,
+                (issue_id,)
+            )
+            issue = cursor.fetchone()
+            
+        if not issue:
+            return jsonify({"error": "Issue not found"}), 404
+        
+        project_id = issue["project_id"]
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+            
+        acting_role = get_project_role(project_id, user_id)
+        if acting_role != "LEAD":
+            return jsonify({"error": "Only project leads may change issue assignees"}), 403
+        
+        data = request.get_json(force=True)
+        new_assignee = data.get("assignee_id")
+        
+        if new_assignee is not None:
+            try:
+                new_assignee = int(new_assignee)
+            except (TypeError, ValueError):
+                return jsonify({"error": "assignee_id must be an integer or null"}), 400
+            
+            assignee_role = get_project_role(project_id, new_assignee)
+            if assignee_role not in ("LEAD", "DEVELOPER"):
+                return jsonify({"error": "Assignee must be a LEAD or DEVELOPER in this project"}), 400
+            
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE issues
+                    SET assignee_id = %s
+                    WHERE issue_id = %s
+                    """,
+                    (new_assignee, issue_id)
+                )
+                
+                cursor.execute(
+                    """
+                    SELECT * FROM issues WHERE issue_id = %s
+                    """,
+                    (issue_id,)
+                )
+                updated_issue = cursor.fetchone()
+            conn.commit()
+        except IntegrityError as e:
+            conn.rollback()
+            return jsonify({"error": "Assignee update failed", "details": str(e)}), 400
+        
+        return jsonify({"issue": updated_issue}), 200
+        
+    #######################
+    #       HISTORY       #
+    #######################
+    
+    # H1
+    @app.route("/issues/<int:issue_id>/history", methods=["GET"])                
+    @login_required
+    def get_issue_history(issue_id: int):
+        user_id = get_current_user_id()
+        conn = get_db()
+        
+        issue = fetch_issue_or_404(issue_id)
+        if isinstance(issue, Response):
+            return issue
+        
+        visibility_error = ensure_issue_visible(issue, user_id)
+        if visibility_error:
+            return visibility_error
+        
+        with conn.cursor() as cursor:
+            
+        
+        
                 
     ############################### FINAL RETURN ###############################
     return app
