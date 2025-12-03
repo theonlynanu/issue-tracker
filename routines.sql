@@ -74,7 +74,7 @@ BEGIN
         new_value
 	) VALUES (
 		NEW.issue_id,
-        NULL,
+        NEW.reporter_id,
         'created',
         NULL,
         NULL
@@ -101,7 +101,7 @@ BEGIN
 		INSERT INTO issue_history (issue_id, changed_by, field_name, old_value, new_value)
         VALUES (
 			OLD.issue_id,
-            NULL,
+            @current_user_id,
             'status',
             OLD.status,
             NEW.status
@@ -113,7 +113,7 @@ BEGIN
 		INSERT INTO issue_history (issue_id, changed_by, field_name, old_value, new_value)
         VALUES (
 			OLD.issue_id,
-            NULL,
+            @current_user_id,
             'priority',
             OLD.priority,
             NEW.priority
@@ -125,7 +125,7 @@ BEGIN
 		INSERT INTO issue_history (issue_id, changed_by, field_name, old_value, new_value)
         VALUES (
 			OLD.issue_id,
-            NULL,
+            @current_user_id,
             'assignee_id',
             IFNULL(CAST(OLD.assignee_id AS CHAR), NULL),
             IFNULL(CAST(NEW.assignee_id AS CHAR), NULL)
@@ -137,7 +137,7 @@ BEGIN
 		INSERT INTO issue_history (issue_id, changed_by, field_name, old_value, new_value)
         VALUES (
 			OLD.issue_id,
-            NULL,
+            @current_user_id,
             'due_date',
             IFNULL(CAST(OLD.due_date AS CHAR), NULL),
             IFNULL(CAST(NEW.due_date AS CHAR), NULL)
@@ -149,10 +149,10 @@ BEGIN
 		INSERT INTO issue_history (issue_id, changed_by, field_name, old_value, new_value)
         VALUES (
 			OLD.issue_id,
-            NULL,
-            'assignee_id',
-            IFNULL(CAST(OLD.assignee_id AS CHAR), NULL),
-            IFNULL(CAST(NEW.assignee_id AS CHAR), NULL)
+            @current_user_id,
+            'description',
+            OLD.description,
+            NEW.description
         );
 	END IF;
 END$$
