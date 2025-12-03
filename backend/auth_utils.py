@@ -31,7 +31,7 @@ def get_project_role(project_id: int, user_id: int):
         
     return row["role"] if row else None
 
-def can_modify_issue(issue, user_id, role):
+def can_modify_issue(issue, user_id, role) -> bool:
     """Checks if user can edit issue, either as a LEAD or as the assigned developer
     
     issue should be passed as a dict with at least the two fields:
@@ -90,6 +90,14 @@ def get_project_visibility(project_id, user_id):
     
     
 def is_visible_to_user(project_id: int, user_id: int):
+    """
+    Determines whether the project should be visible to the user, with specific consideration
+    for missing issues vs unauthorized access.
+    
+    Returns tuple (bool, int), where bool is whether the project is visible, and
+    int is the specific error associated with lack of visibility. integer is 0
+    if bool is True.
+    """
     vis = get_project_visibility(project_id, user_id)
     
     if not vis["exists"]:
@@ -105,6 +113,7 @@ def attach_labels_to_issues(conn: Connection[DictCursor], issues):
     Returns a copy of a list of issue objects with attached label_id and label_name 
     using a DictCursor connection object.
     
+    If no issues are present, returns original issue with 'labels: []'
     """
     
     if not issues:
@@ -139,7 +148,14 @@ def attach_labels_to_issues(conn: Connection[DictCursor], issues):
         
     return issues
 
-def fetch_issue_or_404(issue_id: int):
+def fetch_issue(issue_id: int, add_labels: bool = False):
+    """
+    Fetch a single issue by id.
+    
+    Returns:   
+        dict: issue row (with 'labels' optionally attached) if found
+        None: if no such issue exists
+    """
     conn = get_db()
     with conn.cursor() as cursor:
         cursor.execute(
@@ -149,6 +165,11 @@ def fetch_issue_or_404(issue_id: int):
             (issue_id,)
         )
         issue = cursor.fetchone()
+        
+    if add_labels and issue is not None:
+        labeled_issue = attach_labels_to_issues(conn, [issue])
+        issue = labeled_issue[0] if labeled_issue else None
+        
     return issue
 
 def ensure_issue_visible(issue, user_id: int):
@@ -160,9 +181,23 @@ def ensure_issue_visible(issue, user_id: int):
         elif err == 403:
             return jsonify({"error": "Not authorized to view this issue"}), 403
         else:
-            return jsonify({"Unable to verify project membership"}), 400
+            return jsonify({"error": "Unable to verify project membership"}), 400
         
     return None
+
+def fetch_comment(comment_id: int):
+    """
+    Fetches a comment by id, or None if comment isn't found
+    """
+    conn = get_db()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT * FROM comments WHERE comment_id = %s
+            """,
+            (comment_id,)
+        )
+        return cursor.fetchone()
 
 ##################################
 #            WRAPPERS            #
