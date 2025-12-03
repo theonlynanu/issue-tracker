@@ -1,6 +1,8 @@
 from functools import wraps
 from flask import session, jsonify
 from db import get_db
+from pymysql.connections import Connection
+from pymysql.cursors import DictCursor
 
 ##################################
 #        HELPER FUNCTIONS        #
@@ -87,6 +89,80 @@ def get_project_visibility(project_id, user_id):
         }
     
     
+def is_visible_to_user(project_id: int, user_id: int):
+    vis = get_project_visibility(project_id, user_id)
+    
+    if not vis["exists"]:
+        return (False, 404)
+    elif not vis["visible"]:
+        return (False, 403)
+    else:
+        return (True, 0)
+    
+
+def attach_labels_to_issues(conn: Connection[DictCursor], issues):
+    """
+    Returns a copy of a list of issue objects with attached label_id and label_name 
+    using a DictCursor connection object.
+    
+    """
+    
+    if not issues:
+        return issues
+    
+    issue_ids = [i["issue_id"] for i in issues]
+    placeholders = ", ".join(["%s"] * len(issue_ids))
+    
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT il.issue_id, l.label_id, l.name
+            FROM issue_labels il JOIN labels l on l.label_id = il.label_id
+            WHERE il.issue_id IN ({placeholders})
+            ORDER BY l.name ASC
+            """,
+            issue_ids
+        )
+        label_rows = cursor.fetchall()
+        
+    labels_by_issue_id = {}
+    for row in label_rows:
+        iid = row["issue_id"]
+        labels_by_issue_id.setdefault(iid, []).append({
+            "label_id": row["label_id"],
+            "name": row["name"]
+        })
+        
+    for issue in issues:
+        iid = issue["issue_id"]
+        issue["labels"] = labels_by_issue_id.get(iid, [])
+        
+    return issues
+
+def fetch_issue_or_404(issue_id: int):
+    conn = get_db()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT * FROM issues WHERE issue_id = %s
+            """,
+            (issue_id,)
+        )
+        issue = cursor.fetchone()
+    return issue
+
+def ensure_issue_visible(issue, user_id: int):
+    project_id = issue["project_id"]
+    visible, err = is_visible_to_user(project_id, user_id)
+    if not visible:
+        if err == 404:
+            return jsonify({"error": "Issue not found"}), 404
+        elif err == 403:
+            return jsonify({"error": "Not authorized to view this issue"}), 403
+        else:
+            return jsonify({"Unable to verify project membership"}), 400
+        
+    return None
 
 ##################################
 #            WRAPPERS            #
