@@ -18,7 +18,7 @@ export function LoginPage() {
       await login(identifier, password);
       // On successful login, we update the user in the AuthProvider and re-render with main routes visible
     } catch (e) {
-      if (isApiError(e) && e.status == 401) {
+      if (isApiError(e) && (e.status == 401 || e.status == 404)) {
         setError("Invalid email/username or password.");
       } else if (e instanceof Error) {
         setError(e.message);
