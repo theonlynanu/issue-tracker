@@ -1164,7 +1164,7 @@ def create_app():
         
         return jsonify({"issue": updated_issue}), 200
     
-    
+    # I5
     @app.route("/issues/<int:issue_id>/assignee", methods=["PATCH"])
     @login_required
     def update_issue_assignee(issue_id: int):
