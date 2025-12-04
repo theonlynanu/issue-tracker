@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         }
       } catch (e) {
         // If unauthorized, we're simply not logged in
-        if (isApiError(e) && e.status == 401) {
+        if (isApiError(e) && e.status === 401) {
           if (!cancelled) {
             setUser(null);
           }

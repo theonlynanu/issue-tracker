@@ -1,6 +1,9 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
+import IssueDetailsPage from "./pages/IssueDetailsPage";
+import ProjectDetailsPage from "./pages/ProjectDetailsPage";
+import ProjectsPage from "./pages/ProjectsPage";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -26,7 +29,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
-      <Route path="/issues/:issueId" element={<IssueDetailPage />} />
+      <Route path="/issues/:issueId" element={<IssueDetailsPage />} />
       {/* Catch-all: redirect to projects for now */}
       <Route path="*" element={<Navigate to="/projects" />} />
     </Routes>

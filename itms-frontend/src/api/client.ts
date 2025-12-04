@@ -55,8 +55,8 @@ export type UpdateMePayload = Partial<
 // P2
 export interface CreateProjectPayload {
   project_key: string;
-  project_name: string;
-  project_description?: string;
+  name: string;
+  project_description?: string | null;
   is_public?: boolean;
 }
 
