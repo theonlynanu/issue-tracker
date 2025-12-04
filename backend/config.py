@@ -18,3 +18,4 @@ class Config:
     DB_NAME = os.environ.get("DB_NAME", "itms")
     DB_USER = os.environ.get("DB_USER", "root")
     DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+    FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173") # Default for Vite dev

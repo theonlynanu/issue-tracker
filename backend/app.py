@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, session
+from flask_cors import CORS
 from config import Config
 from db import get_db, close_db
 from auth_utils import (login_required, get_current_user_id, require_project_role, 
@@ -27,6 +28,11 @@ def create_app():
     
     app.teardown_appcontext(close_db)
     
+    CORS(
+        app,
+        resources={r"/*": {"origins": app.config["FRONTEND_ORIGIN"]}},
+        supports_credentials=True
+    )
     
     #########################################
     #           Basic Testing               #   
