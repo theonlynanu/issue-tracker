@@ -13,7 +13,7 @@ export interface AuthUser {
   username: string;
   first_name: string;
   last_name: string;
-  created_at?: string; // /auth/login doesn't give created_at
+  // /auth/login doesn't give created_at
 }
 
 export type ProjectRole = "LEAD" | "DEVELOPER" | "VIEWER";
@@ -67,7 +67,7 @@ export interface IssueHistoryEntry {
 }
 
 export interface Comment {
-  commend_id: number;
+  comment_id: number;
   content: string;
   issue_id: number;
   author_id: number | null;
