@@ -1774,7 +1774,30 @@ def create_app():
         
         return jsonify({"success": True}), 200
         
+    #######################
+    #        USERS        #
+    #######################
+    @app.route("/users/<int:user_id>", methods=["GET"])
+    @login_required
+    def get_user_summary(user_id: int):
+        conn = get_db()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT user_id, username, first_name, last_name
+                FROM users
+                WHERE user_id = %s
+                """,
+                (user_id,)
+            )
+            row = cursor.fetchone()
+            
+        if not row:
+            return jsonify({"error": "User not found"}), 404
         
+        return jsonify({"user": row}), 200
+            
+    
         
     ############################### FINAL RETURN ###############################
     return app
