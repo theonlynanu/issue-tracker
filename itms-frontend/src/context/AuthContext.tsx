@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { User } from "../types/api";
-import { api, isApiError } from "../api/client";
+import {
+  api,
+  isApiError,
+  type RegisterPayload,
+  type UpdateMePayload,
+} from "../api/client";
 
 // Shape of the auth state and actions exposed to the frontend
 interface AuthContextValue {
@@ -10,6 +15,8 @@ interface AuthContextValue {
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
+  updateMe: (patch: UpdateMePayload) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
 }
 
 // Creates context to enforce usage in the AuthProvider
@@ -68,12 +75,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
    * If something fails, caller should handle error
    */
   const login = async (identifier: string, password: string) => {
-    // Throws ApiError on bad credentials - expect caller to catch
-    await api.login({ identifier, password });
-
-    // After successful login, fetch full User
-    const { user } = await api.me();
-    setUser(user);
+    setLoading(true);
+    try {
+      // Throws ApiError on bad credentials - expect caller to catch
+      await api.login({ identifier, password });
+      const { user } = await api.me();
+      // After successful login, fetch full User
+      setUser(user);
+    } finally {
+      setLoading(false);
+    }
   };
 
   /**
@@ -82,6 +93,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
    * - set user to null
    */
   const logout = async () => {
+    setLoading(true);
     try {
       await api.logout();
     } catch (e) {
@@ -90,14 +102,56 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     } finally {
       setUser(null);
     }
+    setLoading(false);
   };
 
   /**
    * Refresh currently logged-in user (for after PATCH /me)
    */
   const refreshMe = async () => {
-    const { user } = await api.me();
-    setUser(user);
+    setLoading(true);
+    try {
+      const me = await api.me();
+      setUser(me.user);
+    } catch (e) {
+      if (isApiError(e) && e.status === 401) {
+        setUser(null);
+      } else {
+        console.error("Failed to refresh /me: ", e);
+        throw e;
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateMe = async (payload: UpdateMePayload) => {
+    setLoading(true);
+    try {
+      await api.update_me(payload);
+      const me = await api.me();
+      setUser(me.user);
+    } catch (e) {
+      console.error("Unable to update profile: ", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (payload: RegisterPayload) => {
+    setLoading(true);
+
+    try {
+      await api.register(payload);
+      await api.login({
+        identifier: payload.username,
+        password: payload.password,
+      });
+      const me = await api.me();
+      setUser(me.user);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const value: AuthContextValue = {
@@ -106,6 +160,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     login,
     logout,
     refreshMe,
+    updateMe,
+    register,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

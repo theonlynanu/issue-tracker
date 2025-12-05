@@ -56,7 +56,7 @@ export type UpdateMePayload = Partial<
 export interface CreateProjectPayload {
   project_key: string;
   name: string;
-  project_description?: string | null;
+  description?: string | null;
   is_public?: boolean;
 }
 
@@ -274,7 +274,7 @@ export const api = {
   change_project_member_role: (
     projectId: number,
     memberId: number,
-    payload: UpdateProjectMemberRolePayload
+    role: ProjectRole
   ) =>
     request<{
       message: string;
@@ -283,7 +283,7 @@ export const api = {
       new_role: ProjectRole;
     }>(`/projects/${projectId}/members/${memberId}`, {
       method: "PATCH",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ role }),
     }),
 
   // M4 – remove project member
