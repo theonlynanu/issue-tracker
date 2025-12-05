@@ -57,7 +57,7 @@ export default function ProjectsPage() {
       <button
         type="button"
         onClick={() => navigate("/projects/new")}
-        className="border border-slate-500 w-fit px-4 rounded-2xl mb-8"
+        className="border border-slate-500 w-fit px-4 rounded-2xl mb-8 hover:bg-slate-700"
       >
         New Project
       </button>
@@ -77,7 +77,10 @@ export default function ProjectsPage() {
           </thead>
           <tbody>
             {projects.map((project) => (
-              <tr key={project.project_id}>
+              <tr
+                key={project.project_id}
+                className="border-y bg-slate-900 hover:bg-slate-800"
+              >
                 <td>
                   <Link to={`/projects/${project.project_id}`}>
                     {project.project_key}

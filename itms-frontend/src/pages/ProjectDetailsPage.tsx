@@ -143,23 +143,24 @@ export default function ProjectDetailsPage() {
   return (
     <div>
       {/* Project Header */}
-      <header className="flex flex-col">
-        <h1>
-          {project.project_key} - {project.name}
-        </h1>
-        {project.user_role === "LEAD" && (
-          <button
-            type="button"
-            onClick={() => navigate(`/projects/${project.project_id}/edit`)}
-          >
-            Edit Project Details
-          </button>
-        )}
+      <header className="flex flex-col mb-8">
+        <div className="flex gap-16 items-center justify-between">
+          <h1>
+            {project.project_key} - {project.name}
+          </h1>
+          {project.user_role === "LEAD" && (
+            <button
+              type="button"
+              onClick={() => navigate(`/projects/${project.project_id}/edit`)}
+              className="bg-slate-500 w-fit px-2 py-1 rounded-2xl hover:bg-slate-600 h-fit"
+            >
+              Edit Project Details
+            </button>
+          )}
+        </div>
         <p>{project.description}</p>
-        <p>
-          Visibility: {visibilityLabel(project.is_public)}{" "}
-          {project.user_role && <> Your role: {project.user_role}</>}
-        </p>
+        <p>Visibility: {visibilityLabel(project.is_public)}</p>
+        <p>{project.user_role && <> Your role: {project.user_role}</>}</p>
         <p>Created at: {new Date(project.created_at).toLocaleDateString()}</p>
         <p>Created by: {formatUserSync(project.created_by)}</p>
       </header>
@@ -196,14 +197,14 @@ export default function ProjectDetailsPage() {
       {project.user_role === "LEAD" && (
         <button
           type="button"
-          onClick={() => navigate(`/projects/${project.project_id}/issues.new`)}
-          className="w-fit bg-slate-500 rounded-2xl p-2 mb-8"
+          onClick={() => navigate(`/projects/${project.project_id}/issues/new`)}
+          className="w-fit bg-slate-500 rounded-2xl p-2 mb-8 hover:bg-slate-600"
         >
           Add New Issue
         </button>
       )}
       {/* Issue List */}
-      <section>
+      <section className="mb-8">
         <h2 className="text-3xl">Issues</h2>
         {issues.length === 0 ? (
           <p>No issues in this project yet.</p>
@@ -222,7 +223,10 @@ export default function ProjectDetailsPage() {
             </thead>
             <tbody>
               {issues.map((issue) => (
-                <tr key={issue.issue_id}>
+                <tr
+                  key={issue.issue_id}
+                  className="border-y hover:bg-slate-900"
+                >
                   <td>
                     <Link to={`/issues/${issue.issue_id}`}>
                       {project.project_key} - {issue.issue_number}
@@ -247,7 +251,7 @@ export default function ProjectDetailsPage() {
             setMembersVisible(!membersVisible);
             setLabelsVisible(false);
           }}
-          className="border p-2 rounded-2xl bg-slate-500 m-4"
+          className=" p-2 rounded-2xl bg-slate-500 m-4 hover:bg-slate-600"
         >
           {membersVisible ? "Hide Members List" : "Show Members List"}
         </button>
@@ -257,7 +261,7 @@ export default function ProjectDetailsPage() {
             setLabelsVisible(!labelsVisible);
             setMembersVisible(false);
           }}
-          className="border p-2 rounded-2xl bg-slate-500 m-4"
+          className=" p-2 rounded-2xl bg-slate-500 m-4 hover:bg-slate-600"
         >
           {labelsVisible ? "Hide labels" : "Show labels"}
         </button>

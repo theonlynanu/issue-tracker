@@ -19,7 +19,10 @@ export default function LoginPage() {
       await login(identifier, password);
       // On successful login, we update the user in the AuthProvider and re-render with main routes visible
     } catch (e) {
-      if (isApiError(e) && (e.status === 401 || e.status === 404)) {
+      if (
+        isApiError(e) &&
+        (e.status === 401 || e.status === 403 || e.status === 404)
+      ) {
         setError("Invalid email/username or password.");
       } else if (e instanceof Error) {
         setError(e.message);
@@ -70,7 +73,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-64 bg-emerald-700"
+          className="w-64 bg-emerald-700 hover:bg-emerald-800 rounded-lg"
         >
           {submitting ? "Logging in..." : "Login"}
         </button>

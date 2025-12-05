@@ -86,19 +86,31 @@ export default function ProfilePage() {
       <h1>My Profile</h1>
 
       <section className="flex flex-col my-4">
-        <h2 className="text-2xl">Account Information</h2>
+        <h2 className="text-2xl underline text-slate-500">
+          Account Information
+        </h2>
+        <p className="text-xl">
+          {user.first_name} {user.last_name}
+        </p>
         <p>User ID: {user.user_id}</p>
         <p>
           Email: {user.email} {"(Cannot be changed)"}
         </p>
         <p>Joined: {new Date(user.created_at).toLocaleString()}</p>
       </section>
-      <button type="button" onClick={() => setEditOpen(!editOpen)}>
+      <button
+        type="button"
+        onClick={() => setEditOpen(!editOpen)}
+        className="text-xl px-2 py-1 rounded-xl my-2 bg-slate-600 hover:bg-slate-700"
+      >
         {!editOpen ? "Edit profile?" : "Close editor"}
       </button>
       {editOpen ? (
         <section>
-          <form onSubmit={handleSubmit}>
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-4 items-left"
+          >
             <div>
               <label>
                 Username
@@ -136,7 +148,11 @@ export default function ProfilePage() {
             {error && <div>{error}</div>}
             {message && <div>{message}</div>}
 
-            <button type="submit" disabled={submitting}>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-fit px-2 py-1 bg-slate-500 hover:bg-slate-600 rounded-2xl"
+            >
               {submitting ? "Saving..." : "Save changes"}
             </button>
           </form>

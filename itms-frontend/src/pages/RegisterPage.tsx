@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import type { RegisterPayload } from "../api/client";
+import { isApiError, type RegisterPayload } from "../api/client";
 import React, { useState } from "react";
 
 export default function RegisterPage() {
@@ -39,7 +39,16 @@ export default function RegisterPage() {
       await register(form);
       navigate("/projects");
     } catch (e) {
-      if (e instanceof Error) {
+      if (isApiError(e)) {
+        // map status codes to messages as you see fit
+        if (e.status === 409 || e.status === 400) {
+          setError(e.message || "Registration failed due to invalid input.");
+        } else {
+          setError(
+            e.message || `Registration failed (server error: ${e.status}).`
+          );
+        }
+      } else if (e instanceof Error) {
         setError(e.message);
       } else {
         setError("Unexpected error during registration.");
@@ -124,7 +133,7 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-64 bg-emerald-800"
+          className="w-64 bg-emerald-700 hover:bg-emerald-800 rounded-lg"
         >
           {submitting ? "Creating account..." : "Register"}
         </button>

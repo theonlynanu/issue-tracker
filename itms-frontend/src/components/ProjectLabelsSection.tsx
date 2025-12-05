@@ -226,14 +226,14 @@ export default function ProjectLabelsSection({
 
   return (
     <section className={visible ? "" : "hidden"}>
-      <h2>Project Labels</h2>
+      <h2 className="text-2xl my-4">Project Labels</h2>
       {error && <div>{error}</div>}
       {actionMessage && <div>{actionMessage}</div>}
 
       {labels.length == 0 ? (
         <p>No labels defined for this project.</p>
       ) : (
-        <table>
+        <table className="w-full text-center">
           <thead>
             <tr>
               <th>Name</th>
@@ -242,7 +242,7 @@ export default function ProjectLabelsSection({
           </thead>
           <tbody>
             {labels.map((label) => (
-              <tr key={label.label_id}>
+              <tr key={label.label_id} className="border-y h-12 ">
                 <td>
                   {editingLabelId === label.label_id ? (
                     <input
@@ -258,13 +258,14 @@ export default function ProjectLabelsSection({
                   )}
                 </td>
                 {canManageLabels && (
-                  <td>
+                  <td className="flex justify-center gap-8 items-center text-sm my-2 ">
                     {editingLabelId === label.label_id ? (
                       <>
                         <button
                           type="button"
                           onClick={handleSaveEdit}
                           disabled={savingEdit}
+                          className="bg-slate-500 hover:bg-slate-600 rounded-2xl px-2 py-1"
                         >
                           Save
                         </button>
@@ -278,6 +279,7 @@ export default function ProjectLabelsSection({
                           type="button"
                           onClick={() => startEdit(label)}
                           disabled={deletingLabelId === label.label_id}
+                          className="bg-slate-500 hover:bg-slate-600 rounded-2xl px-2 py-1 "
                         >
                           Rename
                         </button>
@@ -285,6 +287,7 @@ export default function ProjectLabelsSection({
                           type="button"
                           onClick={() => handleDeletelabel(label.label_id)}
                           disabled={deletingLabelId === label.label_id}
+                          className="bg-slate-500 hover:bg-slate-600 rounded-2xl px-2 py-1 "
                         >
                           Delete
                         </button>
@@ -299,7 +302,7 @@ export default function ProjectLabelsSection({
       )}
 
       {canManageLabels && (
-        <form onSubmit={handleCreateLabel}>
+        <form onSubmit={handleCreateLabel} className="my-4">
           <h3 className="underline font-semibold text-xl">Add Label</h3>
           <div>
             <label>
@@ -313,7 +316,11 @@ export default function ProjectLabelsSection({
               />
             </label>
           </div>
-          <button type="submit" disabled={creating}>
+          <button
+            type="submit"
+            disabled={creating}
+            className="bg-slate-500 hover:bg-slate-600 rounded-2xl px-2 py-1 my-2"
+          >
             {creating ? "Creating..." : "Create New Label"}
           </button>
         </form>

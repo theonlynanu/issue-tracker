@@ -76,12 +76,12 @@ export default function NewIssuePage() {
 
   return (
     <div>
-      <h1>New Issue</h1>
+      <h1 className="mb-4">New Issue</h1>
       <p>
-        Project: <Link to={`/projects/${projectId}`}>Back to project</Link>
+        <Link to={`/projects/${projectId}`}>Back to project</Link>
       </p>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="my-4 flex flex-col gap-4">
         <div>
           <label>
             Title
@@ -90,16 +90,20 @@ export default function NewIssuePage() {
               value={form.title}
               onChange={(e) => updateField("title", e.target.value)}
               required
+              placeholder="Informative title"
+              className="bg-slate-900 mx-3 rounded-md hover:bg-slate-800 px-2 py-1 "
             />
           </label>
         </div>
         <div>
-          <label>
-            Description
+          <label className="flex">
+            Description (optional)
             <textarea
               value={form.description}
               onChange={(e) => updateField("description", e.target.value)}
               rows={4}
+              placeholder="Describe the issue, preferably with reproduction steps..."
+              className="bg-slate-900 mx-3 rounded-md hover:bg-slate-800 px-2 py-1 "
             />
           </label>
         </div>
@@ -108,6 +112,7 @@ export default function NewIssuePage() {
             Type
             <select
               value={form.type}
+              className="bg-slate-900 mx-3 rounded-md hover:bg-slate-800 px-2 py-1 "
               onChange={(e) => updateField("type", e.target.value as IssueType)}
             >
               {ISSUE_TYPES.map((t) => (
@@ -126,6 +131,7 @@ export default function NewIssuePage() {
               onChange={(e) =>
                 updateField("priority", e.target.value as IssuePriority)
               }
+              className="bg-slate-900 mx-3 rounded-md hover:bg-slate-800 px-2 py-1 "
             >
               {ISSUE_PRIORITIES.map((p) => (
                 <option key={p} value={p}>
@@ -143,6 +149,7 @@ export default function NewIssuePage() {
               value={assigneeInput}
               onChange={(e) => setAssigneeInput(e.target.value)}
               placeholder="Leave blank for unassigned"
+              className="bg-slate-900 mx-3 rounded-md hover:bg-slate-800 px-2 py-1 w-fit"
             />
           </label>
         </div>

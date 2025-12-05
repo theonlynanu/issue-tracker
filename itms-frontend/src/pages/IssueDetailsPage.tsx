@@ -440,7 +440,7 @@ export default function IssueDetailsPage() {
         <h1>
           Issue #{issueKey}: {issue.title}
         </h1>
-        <p className="text-slate-400 mx-8 mb-4">{issue.description}</p>
+        <p className="text-slate-400 mx-8 my-4">{issue.description}</p>
         <p className="text-xl">
           Project:{" "}
           <Link to={`/projects/${issue.project_id}`}>
@@ -461,7 +461,7 @@ export default function IssueDetailsPage() {
       {labelsLoading && <div>Loading labels...</div>}
 
       {issueLabels.length === 0 ? null : (
-        <ul>
+        <ul className="flex gap-2 my-2">
           {issueLabels.map((label) => (
             <li
               key={label.label_id}
@@ -484,7 +484,7 @@ export default function IssueDetailsPage() {
       )}
 
       {attachableLabels.length > 0 && project?.user_role === "LEAD" ? (
-        <form onSubmit={handleAddLabel}>
+        <form onSubmit={handleAddLabel} className="my-2">
           <label>
             Add label:
             <select
@@ -495,6 +495,7 @@ export default function IssueDetailsPage() {
                 )
               }
               disabled={labelBusyId !== null}
+              className="bg-slate-800 hover:bg-slate-900 rounded-lg px-2 py-1 mx-4"
             >
               <option value="">Select a label</option>
               {attachableLabels.map((label) => (
@@ -507,6 +508,7 @@ export default function IssueDetailsPage() {
           <button
             type="submit"
             disabled={selectedLabelId === "" || labelBusyId !== null}
+            className="bg-slate-500 hover:bg-slate-600 px-2 py-1 rounded-2xl"
           >
             Attach
           </button>
@@ -522,6 +524,10 @@ export default function IssueDetailsPage() {
             type="button"
             onClick={() => setActiveTab("edit")}
             disabled={activeTab === "edit"}
+            className={
+              (activeTab === "edit" ? "bg-slate-600" : "") +
+              " px-2 py-1 rounded-lg hover:bg-slate-600"
+            }
           >
             Edit Status / Assignee
           </button>
@@ -530,7 +536,10 @@ export default function IssueDetailsPage() {
           type="button"
           onClick={() => setActiveTab("comments")}
           disabled={activeTab === "comments"}
-          className="border border-slate-600 px-2 py-1 rounded-2xl"
+          className={
+            (activeTab === "comments" ? "bg-slate-600" : "") +
+            " px-2 py-1 rounded-lg hover:bg-slate-600"
+          }
         >
           Comments
         </button>
@@ -538,6 +547,10 @@ export default function IssueDetailsPage() {
           type="button"
           onClick={() => setActiveTab("history")}
           disabled={activeTab === "history"}
+          className={
+            (activeTab === "history" ? "bg-slate-600" : "") +
+            " px-2 py-1 rounded-lg hover:bg-slate-600"
+          }
         >
           History
         </button>
@@ -546,8 +559,7 @@ export default function IssueDetailsPage() {
       {/* TAB CONTENT */}
       <div>
         {activeTab === "edit" && (
-          <section>
-            <h2>Details</h2>
+          <section className="flex flex-col gap-4">
             <div>
               <label>
                 Type
@@ -559,6 +571,7 @@ export default function IssueDetailsPage() {
                     })
                   }
                   disabled={updating}
+                  className="bg-slate-800 hover:bg-slate-900 rounded-lg px-2 py-1 mx-4"
                 >
                   {ISSUE_TYPES.map((t) => (
                     <option key={t} value={t}>
@@ -579,6 +592,7 @@ export default function IssueDetailsPage() {
                     })
                   }
                   disabled={updating}
+                  className="bg-slate-800 hover:bg-slate-900 rounded-lg px-2 py-1 mx-4"
                 >
                   {ISSUE_STATUSES.map((s) => (
                     <option key={s} value={s}>
@@ -599,6 +613,7 @@ export default function IssueDetailsPage() {
                     })
                   }
                   disabled={updating}
+                  className="bg-slate-800 hover:bg-slate-900 rounded-lg px-2 py-1 mx-4"
                 >
                   {ISSUE_PRIORITIES.map((p) => (
                     <option key={p} value={p}>
@@ -617,6 +632,7 @@ export default function IssueDetailsPage() {
                     value={issue.assignee_id ?? ""}
                     onChange={handleAssigneeChange}
                     disabled={updating}
+                    className="bg-slate-800 hover:bg-slate-900 rounded-lg px-2 py-1 mx-4"
                   >
                     <option value="">Unassigned</option>
                     {assignableMembers.map((m) => (

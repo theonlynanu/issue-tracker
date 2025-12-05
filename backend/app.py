@@ -94,13 +94,14 @@ def create_app():
                 )
                 conn.commit()
                 
-            except IntegrityError as e:
+            except Exception as e:
                 conn.rollback()
                 
                 # Duplicate entry for key
                 if e.args[0] == 1062:
                     return jsonify({"error": "User already exists"}), 409
-                
+                elif e.args[0] == 3819:
+                    return jsonify({"error": "Invalid characters in username"}), 400
                 # Other DB error
                 return jsonify({"error": "Registration failed", "details": str(e)}), 400
             

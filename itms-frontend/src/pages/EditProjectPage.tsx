@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, isApiError, type UpdateProjectPayload } from "../api/client";
-import type { Project } from "../types/api";
+import type { Project, ProjectRole } from "../types/api";
 
 export default function EditProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -13,6 +13,7 @@ export default function EditProjectPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [togglingVisibility, setTogglingVisibility] = useState(false);
+  const [userRole, setUserRole] = useState<ProjectRole | null>(null);
 
   const [form, setForm] = useState<{
     project_key: string;
@@ -45,6 +46,7 @@ export default function EditProjectPage() {
         if (cancelled) return;
 
         setProject(project);
+        setUserRole(project.user_role);
         setForm({
           project_key: project.project_key,
           name: project.name,
@@ -218,7 +220,7 @@ export default function EditProjectPage() {
     return <div>Project not found.</div>;
   }
 
-  if (project.user_role !== "LEAD") {
+  if (userRole !== "LEAD") {
     return <div>You are not permitted to edit this project.</div>;
   }
 
@@ -229,7 +231,7 @@ export default function EditProjectPage() {
         <Link to={`/projects/${project.project_id}`}>Back to project</Link>
       </p>
 
-      <form onSubmit={handleSave}>
+      <form onSubmit={handleSave} className="flex flex-col gap-4">
         <div>
           <label>
             Project Key
@@ -237,6 +239,7 @@ export default function EditProjectPage() {
               type="text"
               value={form.project_key}
               onChange={(e) => updateField("project_key", e.target.value)}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
             />
           </label>
         </div>
@@ -247,6 +250,7 @@ export default function EditProjectPage() {
               type="text"
               value={form.name}
               onChange={(e) => updateField("name", e.target.value)}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
             />
           </label>
         </div>
@@ -257,6 +261,7 @@ export default function EditProjectPage() {
               value={form.description}
               onChange={(e) => updateField("description", e.target.value)}
               rows={3}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
             />
           </label>
         </div>
@@ -264,18 +269,30 @@ export default function EditProjectPage() {
         {error && <div>{error}</div>}
         {message && <div>{message}</div>}
 
-        <button type="submit" disabled={saving}>
+        <button
+          type="submit"
+          disabled={saving}
+          className="bg-slate-500 hover:bg-slate-600 w-fit rounded-2xl px-2 py-1 mb-8"
+        >
           {saving ? "Saving..." : "Save changes"}
         </button>
       </form>
 
       <section>
-        <h2>Visibility</h2>
-        <p>Current: {form.is_public ? "Public" : "Private"}</p>
+        <h2 className="text-3xl">Visibility</h2>
+        <p className={form.is_public ? "text-emerald-500" : "text-red-500"}>
+          {form.is_public ? "Public" : "Private"}
+        </p>
         <button
           type="button"
           onClick={handleToggleVisibility}
           disabled={togglingVisibility}
+          className={
+            (form.is_public
+              ? "bg-emerald-800 hover:bg-emerald-900"
+              : "bg-rose-800 hover:bg-rose-900") +
+            " px-2 py-1 rounded-2xl text-center"
+          }
         >
           {togglingVisibility
             ? "Updating..."
@@ -285,9 +302,13 @@ export default function EditProjectPage() {
         </button>
       </section>
       <section>
-        <h2>Danger Zone</h2>
-        <button type="button" onClick={handleDelete}>
-          Delete project
+        <h2 className="text-5xl my-4">----- Danger Zone -----</h2>
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="bg-rose-800 hover:bg-rose-950 px-2 py-1 rounded-2xl"
+        >
+          DELETE PROJECT
         </button>
       </section>
     </div>

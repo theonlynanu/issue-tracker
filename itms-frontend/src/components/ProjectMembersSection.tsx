@@ -254,7 +254,7 @@ export default function ProjectMembersSection({
       {members.length === 0 ? (
         <div>No members found for this project.</div>
       ) : (
-        <table className="table-fixed table-cell">
+        <table className="w-full text-center p-8 mx-auto">
           <thead className="">
             <tr>
               <th>Member</th>
@@ -263,14 +263,14 @@ export default function ProjectMembersSection({
               {isActingLead && <th>Actions</th>}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="">
             {members.map((member) => {
               const isSelf =
                 currentUserId !== null && member.user_id === currentUserId;
               const disabled = savingMemberId === member.user_id;
 
               return (
-                <tr key={member.user_id}>
+                <tr key={member.user_id} className="border-y my-4 h-12">
                   <td>
                     {member.first_name} {member.last_name} ({member.username})
                   </td>
@@ -285,6 +285,7 @@ export default function ProjectMembersSection({
                           )
                         }
                         disabled={disabled}
+                        className="bg-slate-800 rounded-2xl px-2 py-1 hover:bg-slate-900"
                       >
                         <option value="LEAD">LEAD</option>
                         <option value="DEVELOPER">DEVELOPER</option>
@@ -301,6 +302,7 @@ export default function ProjectMembersSection({
                         type="button"
                         onClick={() => handleRemoveMember(member.user_id)}
                         disabled={disabled}
+                        className="bg-slate-500 rounded-2xl px-2 py-1 text-sm hover:bg-slate-600"
                       >
                         {isSelf ? "Leave project" : "Remove"}
                       </button>
@@ -315,8 +317,8 @@ export default function ProjectMembersSection({
 
       {addUserError && <div>{addUserError}</div>}
       {isActingLead && (
-        <form onSubmit={handleAddMember}>
-          <h3>Add Member</h3>
+        <form onSubmit={handleAddMember} className="my-4">
+          <h3 className="text-2xl">Add Member</h3>
           <div>
             <label>
               Identifer (username or email)
@@ -325,7 +327,7 @@ export default function ProjectMembersSection({
                 value={newIdentifier}
                 onChange={(e) => setNewIdentifier(e.target.value)}
                 disabled={addingMember}
-                className="border border-slate-700 rounded-md mx-2 py-1 px-2"
+                className="border border-slate-700 rounded-md mx-2 py-1 px-2 hover:bg-slate-800"
               />
             </label>
           </div>
@@ -336,7 +338,7 @@ export default function ProjectMembersSection({
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value as ProjectRole)}
                 disabled={addingMember}
-                className="border border-slate-700 rounded-md mx-2 py-1 px-2"
+                className="border border-slate-700 rounded-md mx-2 py-1 px-2 bg-slate-800 hover:bg-slate-900"
               >
                 <option value="LEAD">LEAD</option>
                 <option value="DEVELOPER">DEVELOPER</option>
@@ -344,7 +346,11 @@ export default function ProjectMembersSection({
               </select>
             </label>
           </div>
-          <button type="submit" disabled={addingMember}>
+          <button
+            type="submit"
+            disabled={addingMember}
+            className="bg-slate-500 rounded-2xl px-2 py-1 my-2 hover:bg-slate-600"
+          >
             {addingMember ? "Adding..." : "Add member"}
           </button>
         </form>

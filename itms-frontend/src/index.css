@@ -29,6 +29,14 @@ td {
   padding: 0px 16px;
 }
 
+option {
+  background: oklch(27.9% 0.041 260.031);
+}
+
+select {
+  border: 1px white;
+}
+
 html,
 body,
 #root {

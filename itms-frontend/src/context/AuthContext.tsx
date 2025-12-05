@@ -75,15 +75,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
    * If something fails, caller should handle error
    */
   const login = async (identifier: string, password: string) => {
-    setLoading(true);
     try {
       // Throws ApiError on bad credentials - expect caller to catch
       await api.login({ identifier, password });
       const { user } = await api.me();
       // After successful login, fetch full User
       setUser(user);
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      throw e as Error;
     }
   };
 
@@ -139,8 +138,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   };
 
   const register = async (payload: RegisterPayload) => {
-    setLoading(true);
-
     try {
       await api.register(payload);
       await api.login({
@@ -149,8 +146,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       });
       const me = await api.me();
       setUser(me.user);
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      throw e as Error;
     }
   };
 
