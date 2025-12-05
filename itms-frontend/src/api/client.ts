@@ -1,6 +1,7 @@
 import type {
   User,
   AuthUser,
+  UserSummary,
   Project,
   Issue,
   IssueHistoryEntry,
@@ -417,4 +418,7 @@ export const api = {
     request<{ success: boolean }>(`/comments/${commentId}`, {
       method: "DELETE",
     }),
+
+  get_user: (userId: number) =>
+    request<{ user: UserSummary }>(`/users/${userId}`),
 };

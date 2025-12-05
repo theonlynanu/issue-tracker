@@ -1,5 +1,12 @@
 import { Link, useParams } from "react-router-dom";
 import { api, isApiError } from "../api/client";
+import { useAuth } from "../context/AuthContext";
+import {
+  seedUsersFromMembers,
+  seedUserFromCurrent,
+  getUserSummaryCached,
+  formatUserSync,
+} from "../api/userLookup";
 
 import {
   type Issue,
@@ -10,6 +17,7 @@ import {
   type IssueStatus,
   type IssuePriority,
   type Project,
+  type ProjectMember,
 } from "../types/api";
 import { useEffect, useState } from "react";
 
@@ -26,11 +34,14 @@ const ISSUE_TYPES: IssueType[] = ["BUG", "TASK", "FEATURE", "OTHER"];
 
 export default function IssueDetailsPage() {
   const { issueId } = useParams<{ issueId: string }>();
+  const { user } = useAuth();
 
   const [issue, setIssue] = useState<Issue | null>(null);
   const [history, setHistory] = useState<IssueHistoryEntry[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [availableLabels, setAvailableLabels] = useState<Label[]>([]);
+  const [project, setProject] = useState<Project | null>(null);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [labelsLoading, setLabelsLoading] = useState(false);
@@ -38,12 +49,23 @@ export default function IssueDetailsPage() {
 
   const [activeTab, setActiveTab] = useState<IssueTab>("comments");
   const [updating, setUpdating] = useState<boolean>(false);
+
+  // New comment creation
   const [newComment, setNewComment] = useState<string>("");
 
+  // Label attach/remove
   const [selectedLabelId, setSelectedLabelId] = useState<number | "">("");
   const [labelBusyId, setLabelBusyId] = useState<number | null>(null);
 
-  const [project, setProject] = useState<Project | null>(null);
+  // Assignee update
+  const [assigneeError, setAssigneeError] = useState<string | null>(null);
+
+  // Comment edit/delete
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState<string>("");
+  const [deletingCommentId, setDeletingCommentId] = useState<number | null>(
+    null
+  );
 
   useEffect(() => {
     if (!issueId) {
@@ -71,13 +93,26 @@ export default function IssueDetailsPage() {
           issueRes.issue.project_id
         );
 
+        let membersRes: { members: ProjectMember[] } | null = null;
+        try {
+          membersRes = await api.list_project_members(
+            issueRes.issue.project_id
+          );
+        } catch (e) {
+          console.warn("Failed to load project members for this issue", e);
+        }
+
         if (cancelled) return;
 
         setIssue(issueRes.issue);
         setHistory(historyRes.history);
         setComments(commentsRes.comments);
-        setLabelsLoading(true);
         setProject(parentProject);
+        if (membersRes) {
+          setMembers(membersRes.members);
+        }
+
+        setLabelsLoading(true);
         try {
           const labelsRes = await api.list_project_labels(
             issueRes.issue.project_id
@@ -124,6 +159,50 @@ export default function IssueDetailsPage() {
     };
   }, [issueId]);
 
+  // Seed user info into cache
+  useEffect(() => {
+    seedUserFromCurrent(user ?? null);
+    seedUsersFromMembers(members);
+  }, [user, members]);
+
+  // Resolve relevant user_ids via cache lookup (once per user)
+  useEffect(() => {
+    if (!issue) return;
+
+    const ids = new Set<number>();
+
+    // Reporter and assignee
+    ids.add(issue.reporter_id);
+    if (issue.assignee_id != null) {
+      ids.add(issue.assignee_id);
+    }
+
+    // Comment authors
+    for (const c of comments) {
+      if (c.author_id != null) {
+        ids.add(c.author_id);
+      }
+    }
+
+    // History actors
+    for (const h of history) {
+      if (h.changed_by != null) {
+        ids.add(h.changed_by);
+      }
+    }
+
+    ids.forEach((id) => {
+      void getUserSummaryCached(id).catch((err) => {
+        console.warn("Failed to resolve user: ", id, err);
+      });
+    });
+  }, [issue, comments, history]);
+
+  const isLead = project?.user_role === "LEAD";
+  const assignableMembers = members.filter((m) =>
+    ["LEAD", "DEVELOPER"].includes(m.role)
+  );
+
   async function handleQuickUpdate(
     patch: Partial<Pick<Issue, "status" | "priority" | "type">>
   ) {
@@ -141,6 +220,43 @@ export default function IssueDetailsPage() {
         setError(`Failed to update issue: ${e.message}`);
       } else {
         setError("Failed to update issue due to an unknown error.");
+      }
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function handleAssigneeChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    if (!issue) return;
+    const value = e.target.value;
+    const assignee_id = value === "" ? null : Number(value);
+
+    setUpdating(true);
+    setAssigneeError(null);
+
+    try {
+      const { issue: updated } = await api.update_issue_assignee(
+        issue.issue_id,
+        { assignee_id }
+      );
+      setIssue(updated);
+    } catch (e) {
+      if (isApiError(e)) {
+        if (e.status === 403) {
+          setAssigneeError(
+            "Only project leads may change issue assignees (HTTP 403)."
+          );
+        } else if (e.status === 400) {
+          setAssigneeError(
+            "Assignee must be a LEAD or DEVELOPER in this project."
+          );
+        } else {
+          setAssigneeError(`Failed to update assignee (HTTP ${e.status}).`);
+        }
+      } else if (e instanceof Error) {
+        setAssigneeError(`Failed to update assignee: ${e.message}`);
+      } else {
+        setAssigneeError("Failed to update assignee due to an unknown error.");
       }
     } finally {
       setUpdating(false);
@@ -174,10 +290,75 @@ export default function IssueDetailsPage() {
     }
   }
 
+  function startEditComment(comment: Comment) {
+    setEditingCommentId(comment.comment_id);
+    setEditingContent(comment.content);
+  }
+
+  function cancelEditComment() {
+    setEditingCommentId(null);
+    setEditingContent("");
+  }
+
+  async function saveEditedComment(commentId: number) {
+    if (!issue) return;
+    const content = editingContent.trim();
+    if (!content) return;
+
+    setUpdating(true);
+    setError(null);
+
+    try {
+      const { comment: updated } = await api.update_comment(commentId, {
+        content,
+      });
+      setComments((prev) =>
+        prev.map((c) => (c.comment_id === commentId ? updated : c))
+      );
+      setEditingCommentId(null);
+      setEditingContent("");
+    } catch (e) {
+      if (isApiError(e)) {
+        setError(`Failed to update comment (HTTP ${e.status}).`);
+      } else if (e instanceof Error) {
+        setError(`Failed to update comment: ${e.message}`);
+      } else {
+        setError("Failed to update comment due to an unknown error.");
+      }
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function handleDeleteComment(commentId: number) {
+    if (!issue) return;
+
+    setDeletingCommentId(commentId);
+    setError(null);
+
+    try {
+      const { success } = await api.delete_comment(commentId);
+      if (!success) {
+        throw new Error("Server reported failure deleting comment.");
+      }
+      setComments((prev) => prev.filter((c) => c.comment_id !== commentId));
+    } catch (e) {
+      if (isApiError(e)) {
+        setError(`Failed to delete comment (HTTP ${e.status}).`);
+      } else if (e instanceof Error) {
+        setError(`Failed to delete comment: ${e.message}`);
+      } else {
+        setError("Failed to delete comment due to an unknown error.");
+      }
+    } finally {
+      setDeletingCommentId(null);
+    }
+  }
+
   async function handleAddLabel(e: React.FormEvent) {
     e.preventDefault();
     if (!issue) return;
-    if (selectedLabelId == "") return;
+    if (selectedLabelId === "") return;
 
     const labelId = selectedLabelId;
     setLabelBusyId(labelId);
@@ -249,8 +430,6 @@ export default function IssueDetailsPage() {
 
   const issueKey = issue.issue_number ?? issue.issue_id;
   const issueLabels: Label[] = issue.labels ?? [];
-
-  // Labels not yet attached to this issue
   const attachableLabels = availableLabels.filter(
     (lbl) => !issueLabels.some((il) => il.label_id === lbl.label_id)
   );
@@ -271,17 +450,17 @@ export default function IssueDetailsPage() {
         <p>Type: {issue.type}</p>
         <p>Status: {issue.status}</p>
         <p>Priority: {issue.priority}</p>
-        <p>Raised by: {issue.reporter_id}</p>
-        <p>Assignee: {issue.assignee_id ?? "Unassigned"}</p>
+        <p>Raised by: {formatUserSync(issue.reporter_id)}</p>
+        <p>Assignee: {formatUserSync(issue.assignee_id)}</p>
         <p className="text-sm">
           Created: {new Date(issue.created_at).toLocaleString()} - Last Updated:{" "}
           {new Date(issue.updated_at).toLocaleString()}
         </p>
       </header>
+
       {labelsLoading && <div>Loading labels...</div>}
-      {issueLabels.length === 0 ? (
-        <></>
-      ) : (
+
+      {issueLabels.length === 0 ? null : (
         <ul>
           {issueLabels.map((label) => (
             <li
@@ -332,21 +511,19 @@ export default function IssueDetailsPage() {
             Attach
           </button>
         </form>
-      ) : (
-        <></>
-      )}
+      ) : null}
 
       {error && <div>{error}</div>}
 
-      {/** TABS */}
+      {/* TABS */}
       <div className="mt-8 mb-2 flex gap-4">
         {project?.user_role === "LEAD" && (
           <button
             type="button"
             onClick={() => setActiveTab("edit")}
-            disabled={activeTab == "edit"}
+            disabled={activeTab === "edit"}
           >
-            Edit Status
+            Edit Status / Assignee
           </button>
         )}
         <button
@@ -366,7 +543,7 @@ export default function IssueDetailsPage() {
         </button>
       </div>
 
-      {/** TAB CONTENT */}
+      {/* TAB CONTENT */}
       <div>
         {activeTab === "edit" && (
           <section>
@@ -397,7 +574,9 @@ export default function IssueDetailsPage() {
                 <select
                   value={issue.status}
                   onChange={(e) =>
-                    handleQuickUpdate({ status: e.target.value as IssueStatus })
+                    handleQuickUpdate({
+                      status: e.target.value as IssueStatus,
+                    })
                   }
                   disabled={updating}
                 >
@@ -429,7 +608,29 @@ export default function IssueDetailsPage() {
                 </select>
               </label>
             </div>
-            {/* You can later add editing for title/description/type/assignee here */}
+
+            {isLead && (
+              <div>
+                <label>
+                  Assignee
+                  <select
+                    value={issue.assignee_id ?? ""}
+                    onChange={handleAssigneeChange}
+                    disabled={updating}
+                  >
+                    <option value="">Unassigned</option>
+                    {assignableMembers.map((m) => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.first_name} {m.last_name} ({m.username}) – {m.role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {assigneeError && (
+                  <p className="text-xs text-red-600">{assigneeError}</p>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -440,18 +641,75 @@ export default function IssueDetailsPage() {
               <p>No comments yet.</p>
             ) : (
               <ul>
-                {comments.map((c) => (
-                  <li
-                    key={c.comment_id}
-                    className="text-md my-4 border-b w-fit"
-                  >
-                    <p>{c.content}</p>
-                    <small className="text-xs text-slate-400">
-                      By {c.author_id ?? c.author_id} at{" "}
-                      {new Date(c.created_at).toLocaleString()}
-                    </small>
-                  </li>
-                ))}
+                {comments.map((c) => {
+                  const isAuthor = user && c.author_id === user.user_id;
+                  const canDelete = !!isAuthor || isLead;
+                  const isEditing = editingCommentId === c.comment_id;
+
+                  return (
+                    <li
+                      key={c.comment_id}
+                      className="text-md my-4 border-b w-fit"
+                    >
+                      {isEditing ? (
+                        <div>
+                          <textarea
+                            value={editingContent}
+                            onChange={(e) => setEditingContent(e.target.value)}
+                            rows={3}
+                            className="border border-slate-700 w-64 text-sm"
+                          />
+                          <div className="mt-1 flex gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => saveEditedComment(c.comment_id)}
+                              disabled={updating || !editingContent.trim()}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditComment}
+                              disabled={updating}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p>{c.content}</p>
+                      )}
+
+                      <small className="text-xs text-slate-400 block mt-1">
+                        By {formatUserSync(c.author_id)} at{" "}
+                        {new Date(c.created_at).toLocaleString()}
+                      </small>
+
+                      <div className="mt-1 flex gap-2 text-xs text-slate-500">
+                        {isAuthor && !isEditing && (
+                          <button
+                            type="button"
+                            onClick={() => startEditComment(c)}
+                            disabled={updating}
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteComment(c.comment_id)}
+                            disabled={deletingCommentId === c.comment_id}
+                          >
+                            {deletingCommentId === c.comment_id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
@@ -486,9 +744,17 @@ export default function IssueDetailsPage() {
             ) : (
               <ul>
                 {history.map((h) => (
-                  <li key={h.change_id}>
-                    <small>
-                      By {h.changed_by} at{" "}
+                  <li
+                    key={h.change_id}
+                    className="text-md my-4 border-b w-fit max-w-2/3"
+                  >
+                    <p>
+                      {h.field_name !== "created"
+                        ? `changed ${h.field_name} from ${h.old_value} to ${h.new_value}`
+                        : "created"}
+                    </p>
+                    <small className="text-xs text-slate-400">
+                      By {formatUserSync(h.changed_by)} at{" "}
                       {new Date(h.changed_at).toLocaleString()}
                     </small>
                   </li>

@@ -5,11 +5,13 @@ import type { Label, ProjectRole } from "../types/api";
 interface ProjectLabelsSectionProps {
   projectId: number;
   currentUserRole: ProjectRole | null;
+  visible: boolean;
 }
 
 export default function ProjectLabelsSection({
   projectId,
   currentUserRole,
+  visible,
 }: ProjectLabelsSectionProps) {
   const [labels, setLabels] = useState<Label[]>([]);
   const [loading, setLoading] = useState(true);
@@ -223,7 +225,7 @@ export default function ProjectLabelsSection({
   }
 
   return (
-    <section>
+    <section className={visible ? "" : "hidden"}>
       <h2>Project Labels</h2>
       {error && <div>{error}</div>}
       {actionMessage && <div>{actionMessage}</div>}

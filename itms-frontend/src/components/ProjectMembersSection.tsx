@@ -7,11 +7,13 @@ import type { ProjectMember, ProjectRole } from "../types/api";
 interface ProjectMemberSectionProps {
   projectId: number;
   currentUserRole: ProjectRole | null;
+  visible: boolean;
 }
 
 export default function ProjectMembersSection({
   projectId,
   currentUserRole,
+  visible,
 }: ProjectMemberSectionProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -245,7 +247,7 @@ export default function ProjectMembersSection({
   }
 
   return (
-    <section className="">
+    <section className={visible ? "" : "hidden"}>
       <h2 className="text-2xl">Project Members</h2>
       {actionMessage && <div>{actionMessage}</div>}
 

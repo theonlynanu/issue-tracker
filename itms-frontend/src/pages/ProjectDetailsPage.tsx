@@ -4,6 +4,7 @@ import { api, isApiError } from "../api/client";
 import type { Project, Issue, IssueStatus, IssuePriority } from "../types/api";
 import ProjectMembersSection from "../components/ProjectMembersSection";
 import ProjectLabelsSection from "../components/ProjectLabelsSection";
+import { formatUserSync } from "../api/userLookup";
 
 interface IssueSummary {
   total: number;
@@ -160,6 +161,7 @@ export default function ProjectDetailsPage() {
           {project.user_role && <> Your role: {project.user_role}</>}
         </p>
         <p>Created at: {new Date(project.created_at).toLocaleDateString()}</p>
+        <p>Created by: {formatUserSync(project.created_by)}</p>
       </header>
 
       {/* Issue Summary */}
@@ -259,22 +261,18 @@ export default function ProjectDetailsPage() {
         >
           {labelsVisible ? "Hide labels" : "Show labels"}
         </button>
-        {membersVisible ? (
-          <ProjectMembersSection
-            projectId={project.project_id}
-            currentUserRole={project.user_role}
-          />
-        ) : (
-          <></>
-        )}
-        {labelsVisible ? (
-          <ProjectLabelsSection
-            projectId={project.project_id}
-            currentUserRole={project.user_role}
-          />
-        ) : (
-          <></>
-        )}
+
+        <ProjectMembersSection
+          projectId={project.project_id}
+          currentUserRole={project.user_role}
+          visible={membersVisible}
+        />
+
+        <ProjectLabelsSection
+          projectId={project.project_id}
+          currentUserRole={project.user_role}
+          visible={labelsVisible}
+        />
       </div>
     </div>
   );

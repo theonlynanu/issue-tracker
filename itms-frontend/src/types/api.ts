@@ -83,3 +83,10 @@ export interface ProjectMember {
   role: ProjectRole;
   joined_at: string; // DATETIME as ISO string
 }
+
+export interface UserSummary {
+  user_id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+}
