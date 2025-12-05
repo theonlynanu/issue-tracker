@@ -57,8 +57,8 @@ export default function NewProjectPage() {
 
   return (
     <div>
-      <h1>New Project</h1>
-      <form onSubmit={handleSubmit}>
+      <h1 className="my-8">New Project</h1>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
         <div>
           <label>
             Project Key
@@ -66,6 +66,8 @@ export default function NewProjectPage() {
               type="text"
               value={form.project_key}
               onChange={(e) => updateField("project_key", e.target.value)}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
+              placeholder="FRONTEND-AUTH-123"
               required
             />
           </label>
@@ -76,16 +78,18 @@ export default function NewProjectPage() {
             <input
               type="text"
               value={form.name}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
               onChange={(e) => updateField("name", e.target.value)}
               required
             />
           </label>
         </div>
         <div>
-          <label>
+          <label className="flex">
             Description
             <textarea
               value={form.description ?? ""}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
               onChange={(e) => updateField("description", e.target.value)}
               rows={3}
             />
@@ -97,6 +101,7 @@ export default function NewProjectPage() {
             <input
               type="checkbox"
               checked={!!form.is_public}
+              className="border border-slate-700 rounded-md mx-2 py-1 px-2"
               onChange={(e) => updateField("is_public", e.target.checked)}
             />
           </label>
@@ -104,7 +109,11 @@ export default function NewProjectPage() {
 
         {error && <div>{error}</div>}
 
-        <button type="submit" disabled={submitting}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="border w-fit p-2 bg-emerald-800 rounded-2xl"
+        >
           {submitting ? "Creating..." : "Create Project"}
         </button>
       </form>

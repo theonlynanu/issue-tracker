@@ -1,13 +1,15 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
-import { LoginPage } from "./pages/LoginPage";
+import LoginPage from "./pages/LoginPage";
 import IssueDetailsPage from "./pages/IssueDetailsPage";
 import ProjectDetailsPage from "./pages/ProjectDetailsPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import AppLayout from "./components/AppLayout";
-import { RegisterPage } from "./pages/RegisterPage";
+import RegisterPage from "./pages/RegisterPage";
 import NewProjectPage from "./pages/NewProjectPage";
 import NewIssuePage from "./pages/NewIssuePage";
+import ProfilePage from "./pages/ProfilePage";
+import EditProjectPage from "./pages/EditProjectPage";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -36,11 +38,14 @@ export default function App() {
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<NewProjectPage />} />
         <Route path="projects/:projectId" element={<ProjectDetailsPage />} />
+        <Route path="projects/:projectId/edit" element={<EditProjectPage />} />
         <Route
           path="projects/:projectId/issues/new"
           element={<NewIssuePage />}
         />
         <Route path="issues/:issueId" element={<IssueDetailsPage />} />
+        <Route path="me" element={<ProfilePage />} />
+
         {/* Catch-all: redirect to projects for now */}
         <Route path="*" element={<Navigate to="/projects" />} />
       </Route>

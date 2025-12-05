@@ -245,15 +245,15 @@ export default function ProjectMembersSection({
   }
 
   return (
-    <section>
-      <h2>Project Members</h2>
+    <section className="">
+      <h2 className="text-2xl">Project Members</h2>
       {actionMessage && <div>{actionMessage}</div>}
 
       {members.length === 0 ? (
         <div>No members found for this project.</div>
       ) : (
-        <table>
-          <thead>
+        <table className="table-fixed table-cell">
+          <thead className="">
             <tr>
               <th>Member</th>
               <th>Role</th>

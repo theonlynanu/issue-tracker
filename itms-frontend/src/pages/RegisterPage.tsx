@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import type { RegisterPayload } from "../api/client";
 import React, { useState } from "react";
 
-export function RegisterPage() {
+export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -121,7 +121,11 @@ export function RegisterPage() {
         </label>
         {error && <div>{error}</div>}
 
-        <button type="submit" disabled={submitting} className="w-64">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-64 bg-emerald-800"
+        >
           {submitting ? "Creating account..." : "Register"}
         </button>
       </form>

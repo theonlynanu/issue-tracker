@@ -1,16 +1,19 @@
 import { Link, useParams } from "react-router-dom";
 import { api, isApiError } from "../api/client";
 
-import type {
-  Issue,
-  IssueHistoryEntry,
-  Comment,
-  IssueStatus,
-  IssuePriority,
+import {
+  type Issue,
+  type IssueHistoryEntry,
+  type Comment,
+  type Label,
+  type IssueType,
+  type IssueStatus,
+  type IssuePriority,
+  type Project,
 } from "../types/api";
 import { useEffect, useState } from "react";
 
-type IssueTab = "details" | "comments" | "history";
+type IssueTab = "edit" | "comments" | "history";
 
 const ISSUE_STATUSES: IssueStatus[] = [
   "OPEN",
@@ -19,6 +22,7 @@ const ISSUE_STATUSES: IssueStatus[] = [
   "CLOSED",
 ];
 const ISSUE_PRIORITIES: IssuePriority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+const ISSUE_TYPES: IssueType[] = ["BUG", "TASK", "FEATURE", "OTHER"];
 
 export default function IssueDetailsPage() {
   const { issueId } = useParams<{ issueId: string }>();
@@ -26,12 +30,20 @@ export default function IssueDetailsPage() {
   const [issue, setIssue] = useState<Issue | null>(null);
   const [history, setHistory] = useState<IssueHistoryEntry[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [availableLabels, setAvailableLabels] = useState<Label[]>([]);
+
   const [loading, setLoading] = useState(true);
+  const [labelsLoading, setLabelsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<IssueTab>("details");
+  const [activeTab, setActiveTab] = useState<IssueTab>("comments");
   const [updating, setUpdating] = useState<boolean>(false);
   const [newComment, setNewComment] = useState<string>("");
+
+  const [selectedLabelId, setSelectedLabelId] = useState<number | "">("");
+  const [labelBusyId, setLabelBusyId] = useState<number | null>(null);
+
+  const [project, setProject] = useState<Project | null>(null);
 
   useEffect(() => {
     if (!issueId) {
@@ -55,11 +67,33 @@ export default function IssueDetailsPage() {
           api.list_issue_comments(numericId),
         ]);
 
+        const { project: parentProject } = await api.get_project(
+          issueRes.issue.project_id
+        );
+
         if (cancelled) return;
 
         setIssue(issueRes.issue);
         setHistory(historyRes.history);
         setComments(commentsRes.comments);
+        setLabelsLoading(true);
+        setProject(parentProject);
+        try {
+          const labelsRes = await api.list_project_labels(
+            issueRes.issue.project_id
+          );
+          if (!cancelled) {
+            setAvailableLabels(labelsRes.labels);
+          }
+        } catch (e) {
+          if (!cancelled) {
+            console.warn("Failed to load project labels", e);
+          }
+        } finally {
+          if (!cancelled) {
+            setLabelsLoading(false);
+          }
+        }
       } catch (e) {
         if (cancelled) return;
 
@@ -91,7 +125,7 @@ export default function IssueDetailsPage() {
   }, [issueId]);
 
   async function handleQuickUpdate(
-    patch: Partial<Pick<Issue, "status" | "priority">>
+    patch: Partial<Pick<Issue, "status" | "priority" | "type">>
   ) {
     if (!issue) return;
     setUpdating(true);
@@ -140,6 +174,67 @@ export default function IssueDetailsPage() {
     }
   }
 
+  async function handleAddLabel(e: React.FormEvent) {
+    e.preventDefault();
+    if (!issue) return;
+    if (selectedLabelId == "") return;
+
+    const labelId = selectedLabelId;
+    setLabelBusyId(labelId);
+    setError(null);
+
+    try {
+      const { issue: updatedIssue } = await api.add_label_to_issue(
+        issue.issue_id,
+        { label_id: labelId }
+      );
+      const labels = updatedIssue.labels;
+      if (!labels) {
+        throw new Error("Failed to attach label for unknown reason");
+      }
+      setIssue(updatedIssue);
+    } catch (e) {
+      if (isApiError(e)) {
+        setError(`Failed to add label (HTTP ${e.status}).`);
+      } else if (e instanceof Error) {
+        setError(`Failed to add label: ${e.message}`);
+      } else {
+        setError("Failed to add label due to an unknown error.");
+      }
+    } finally {
+      setLabelBusyId(null);
+      setSelectedLabelId("");
+    }
+  }
+
+  async function handleRemoveLabel(labelId: number) {
+    if (!issue) return;
+    setLabelBusyId(labelId);
+    setError(null);
+
+    try {
+      const { success } = await api.remove_label_from_issue(
+        issue.issue_id,
+        labelId
+      );
+      if (!success) {
+        throw new Error("Failed to remove label for an unknown reason");
+      }
+      const { issue: newIssue } = await api.get_issue(issue.issue_id);
+      setIssue(newIssue);
+    } catch (e) {
+      if (isApiError(e)) {
+        setError(`Failed to remove label (HTTP ${e.status}).`);
+      } else if (e instanceof Error) {
+        setError(`Failed to remove label: ${e.message}`);
+      } else {
+        setError("Failed to remove label due to an unknown error.");
+      }
+    } finally {
+      setLabelBusyId(null);
+    }
+  }
+
   if (loading) {
     return <div>Loading issue details...</div>;
   }
@@ -153,6 +248,12 @@ export default function IssueDetailsPage() {
   }
 
   const issueKey = issue.issue_number ?? issue.issue_id;
+  const issueLabels: Label[] = issue.labels ?? [];
+
+  // Labels not yet attached to this issue
+  const attachableLabels = availableLabels.filter(
+    (lbl) => !issueLabels.some((il) => il.label_id === lbl.label_id)
+  );
 
   return (
     <div>
@@ -160,39 +261,99 @@ export default function IssueDetailsPage() {
         <h1>
           Issue #{issueKey}: {issue.title}
         </h1>
-        <p>{issue.description}</p>
-        <p>
+        <p className="text-slate-400 mx-8 mb-4">{issue.description}</p>
+        <p className="text-xl">
           Project:{" "}
           <Link to={`/projects/${issue.project_id}`}>
-            Project #{issue.project_id}
+            {project?.name || `Project #${issue.project_id}`}
           </Link>
         </p>
-        <p>
-          Type: {issue.type} - Status: {issue.status} - Priority:{" "}
-          {issue.priority}
-        </p>
+        <p>Type: {issue.type}</p>
+        <p>Status: {issue.status}</p>
+        <p>Priority: {issue.priority}</p>
+        <p>Raised by: {issue.reporter_id}</p>
         <p>Assignee: {issue.assignee_id ?? "Unassigned"}</p>
-        <p>
+        <p className="text-sm">
           Created: {new Date(issue.created_at).toLocaleString()} - Last Updated:{" "}
           {new Date(issue.updated_at).toLocaleString()}
         </p>
       </header>
+      {labelsLoading && <div>Loading labels...</div>}
+      {issueLabels.length === 0 ? (
+        <></>
+      ) : (
+        <ul>
+          {issueLabels.map((label) => (
+            <li
+              key={label.label_id}
+              className="rounded-4xl text-xs text-center bg-orange-900 px-2 w-fit py-1"
+            >
+              {label.name}{" "}
+              {project?.user_role === "LEAD" && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveLabel(label.label_id)}
+                  disabled={labelBusyId === label.label_id}
+                  className="text-xs hover:text-red-500 rounded-full"
+                >
+                  ×
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {attachableLabels.length > 0 && project?.user_role === "LEAD" ? (
+        <form onSubmit={handleAddLabel}>
+          <label>
+            Add label:
+            <select
+              value={selectedLabelId === "" ? "" : selectedLabelId}
+              onChange={(e) =>
+                setSelectedLabelId(
+                  e.target.value === "" ? "" : Number(e.target.value)
+                )
+              }
+              disabled={labelBusyId !== null}
+            >
+              <option value="">Select a label</option>
+              {attachableLabels.map((label) => (
+                <option key={label.label_id} value={label.label_id.toString()}>
+                  {label.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={selectedLabelId === "" || labelBusyId !== null}
+          >
+            Attach
+          </button>
+        </form>
+      ) : (
+        <></>
+      )}
 
       {error && <div>{error}</div>}
 
       {/** TABS */}
-      <div>
-        <button
-          type="button"
-          onClick={() => setActiveTab("details")}
-          disabled={activeTab == "details"}
-        >
-          Details
-        </button>
+      <div className="mt-8 mb-2 flex gap-4">
+        {project?.user_role === "LEAD" && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("edit")}
+            disabled={activeTab == "edit"}
+          >
+            Edit Status
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setActiveTab("comments")}
           disabled={activeTab === "comments"}
+          className="border border-slate-600 px-2 py-1 rounded-2xl"
         >
           Comments
         </button>
@@ -207,9 +368,29 @@ export default function IssueDetailsPage() {
 
       {/** TAB CONTENT */}
       <div>
-        {activeTab === "details" && (
+        {activeTab === "edit" && (
           <section>
             <h2>Details</h2>
+            <div>
+              <label>
+                Type
+                <select
+                  value={issue.type}
+                  onChange={(e) =>
+                    handleQuickUpdate({
+                      type: e.target.value as IssueType,
+                    })
+                  }
+                  disabled={updating}
+                >
+                  {ISSUE_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div>
               <label>
                 Status
@@ -254,15 +435,18 @@ export default function IssueDetailsPage() {
 
         {activeTab === "comments" && (
           <section>
-            <h2>Comments</h2>
+            <h2 className="text-2xl">Comments</h2>
             {comments.length === 0 ? (
               <p>No comments yet.</p>
             ) : (
               <ul>
                 {comments.map((c) => (
-                  <li key={c.comment_id}>
+                  <li
+                    key={c.comment_id}
+                    className="text-md my-4 border-b w-fit"
+                  >
                     <p>{c.content}</p>
-                    <small>
+                    <small className="text-xs text-slate-400">
                       By {c.author_id ?? c.author_id} at{" "}
                       {new Date(c.created_at).toLocaleString()}
                     </small>
@@ -273,16 +457,21 @@ export default function IssueDetailsPage() {
 
             <form onSubmit={handleAddComment}>
               <div>
-                <label>
-                  Add a comment
+                <label className="flex">
                   <textarea
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     rows={3}
+                    placeholder="Leave a comment"
+                    className="border border-slate-700 w-64"
                   />
                 </label>
               </div>
-              <button type="submit" disabled={updating || !newComment.trim()}>
+              <button
+                type="submit"
+                disabled={updating || !newComment.trim()}
+                className="border rounded-2xl px-2 py-1 my-2"
+              >
                 {updating ? "Saving..." : "Post comment"}
               </button>
             </form>

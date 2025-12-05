@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { isApiError } from "../api/client";
 import { Link } from "react-router-dom";
 
-export function LoginPage() {
+export default function LoginPage() {
   const { login } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -67,7 +67,11 @@ export function LoginPage() {
 
         {error && <div>{error}</div>}
 
-        <button type="submit" disabled={submitting} className="w-64">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-64 bg-emerald-700"
+        >
           {submitting ? "Logging in..." : "Login"}
         </button>
       </form>

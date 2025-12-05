@@ -52,16 +52,20 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div>
-      <h1>Projects</h1>
-      <button type="button" onClick={() => navigate("/projects/new")}>
+    <div className="flex flex-col">
+      <h1 className="my-2">Projects</h1>
+      <button
+        type="button"
+        onClick={() => navigate("/projects/new")}
+        className="border border-slate-500 w-fit px-4 rounded-2xl mb-8"
+      >
         New Project
       </button>
 
       {projects.length === 0 ? (
         <p>No projects found.</p>
       ) : (
-        <table>
+        <table className="text-center">
           <thead>
             <tr>
               <th>Key</th>

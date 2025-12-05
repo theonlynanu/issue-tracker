@@ -142,44 +142,47 @@ export default function ProjectDetailsPage() {
   return (
     <div>
       {/* Project Header */}
-      <header>
+      <header className="flex flex-col">
         <h1>
           {project.project_key} - {project.name}
         </h1>
+        {project.user_role === "LEAD" && (
+          <button
+            type="button"
+            onClick={() => navigate(`/projects/${project.project_id}/edit`)}
+          >
+            Edit Project Details
+          </button>
+        )}
         <p>{project.description}</p>
         <p>
           Visibility: {visibilityLabel(project.is_public)}{" "}
           {project.user_role && <> Your role: {project.user_role}</>}
         </p>
         <p>Created at: {new Date(project.created_at).toLocaleDateString()}</p>
-        <button
-          type="button"
-          onClick={() => navigate(`/projects/${project.project_id}/issues.new`)}
-        >
-          Add New Issue
-        </button>
       </header>
 
       {/* Issue Summary */}
       {summary && (
         <section>
-          <h2>Issue Summary</h2>
-          <p>Total issues: {summary.total}</p>
-          <p>
-            Open: {summary.open} - Closed: {summary.closed}
-          </p>
-          <div>
-            <h3>By Status</h3>
-            <ul>
+          <h2 className="text-3xl">Issue Summary</h2>
+          <div className="flex gap-8">
+            <p>Total issues: {summary.total}</p>
+            <p>Open: {summary.open}</p>
+            <p>Closed: {summary.closed}</p>
+          </div>
+          <div className="my-4">
+            <h3 className="text-xl">By Status</h3>
+            <ul className="flex gap-8">
               <li>OPEN: {summary.byStatus.OPEN}</li>
               <li>IN_PROGRESS: {summary.byStatus.IN_PROGRESS}</li>
               <li>RESOLVED: {summary.byStatus.RESOLVED}</li>
               <li>CLOSED: {summary.byStatus.CLOSED}</li>
             </ul>
           </div>
-          <div>
-            <h3>By priority</h3>
-            <ul>
+          <div className="my-4">
+            <h3 className="text-xl">By priority</h3>
+            <ul className="flex gap-8">
               <li>LOW: {summary.byPriority.LOW}</li>
               <li>MEDIUM: {summary.byPriority.MEDIUM}</li>
               <li>HIGH: {summary.byPriority.HIGH}</li>
@@ -188,14 +191,22 @@ export default function ProjectDetailsPage() {
           </div>
         </section>
       )}
-
+      {project.user_role === "LEAD" && (
+        <button
+          type="button"
+          onClick={() => navigate(`/projects/${project.project_id}/issues.new`)}
+          className="w-fit bg-slate-500 rounded-2xl p-2 mb-8"
+        >
+          Add New Issue
+        </button>
+      )}
       {/* Issue List */}
       <section>
-        <h2>Issues</h2>
+        <h2 className="text-3xl">Issues</h2>
         {issues.length === 0 ? (
           <p>No issues in this project yet.</p>
         ) : (
-          <table className="w-full">
+          <table className="w-full text-center">
             <thead>
               <tr>
                 <th>Key</th>
@@ -230,9 +241,23 @@ export default function ProjectDetailsPage() {
       <div>
         <button
           type="button"
-          onClick={() => setMembersVisible(!membersVisible)}
+          onClick={() => {
+            setMembersVisible(!membersVisible);
+            setLabelsVisible(false);
+          }}
+          className="border p-2 rounded-2xl bg-slate-500 m-4"
         >
           {membersVisible ? "Hide Members List" : "Show Members List"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setLabelsVisible(!labelsVisible);
+            setMembersVisible(false);
+          }}
+          className="border p-2 rounded-2xl bg-slate-500 m-4"
+        >
+          {labelsVisible ? "Hide labels" : "Show labels"}
         </button>
         {membersVisible ? (
           <ProjectMembersSection
@@ -242,9 +267,6 @@ export default function ProjectDetailsPage() {
         ) : (
           <></>
         )}
-        <button type="button" onClick={() => setLabelsVisible(!labelsVisible)}>
-          {labelsVisible ? "Hide labels" : "Show labels"}
-        </button>
         {labelsVisible ? (
           <ProjectLabelsSection
             projectId={project.project_id}
