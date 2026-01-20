@@ -4,7 +4,18 @@ A full-stack, database-centric issue tracking system designed to emphasize **dat
 
 This project was built as a systems-oriented alternative to typical CRUD demos, trying to focus on schema design, relational constraints, auditability, and backend-enforced permissions.
 
-> **Note:** I am currently working to integrate a fuller, production-quality demo of this system into my personal site (React + Next.js, Postgres, OAuth, hosted infrastructure). This repository represents the core system architecture and implementation.
+> **Note:** I am currently working to integrate a fuller, production-quality demo of this system into my [personal site](https://danyalahmed.dev) (React + Next.js, Postgres, OAuth, hosted infrastructure). This repository represents the core system architecture and implementation.
+---
+## Table of Contents
+
+- [High-Level Overview](#high-level-overview)
+- [Architecture](#architecture)
+- [Core Design Goals](#core-design-goals)
+- [Key Features](#key-features)
+- [Repository Structure](#repository-structure)
+- [Running Locally (Summary)](#running-locally-summary)
+- [Project Use](#project-use)
+- [To Do](#to-do)
 
 ---
 
@@ -256,3 +267,12 @@ You should, at this stage, be able to register your own user and start creating/
 - Apply labels
 - Add and delete comments
 - Watch history updates to issues over time
+
+## To do:
+- Rebuild frontend in Next.js with SSR and stronger data flow
+- Integrate hosted, interactive demo onto personal site
+- Expand API surface for richer querying and aggregation
+- Improve user autonomy (self-removal, user directory, custom views, advanced filtering)
+- Add notification and activity-based features
+
+
