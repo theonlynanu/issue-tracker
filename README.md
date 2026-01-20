@@ -232,7 +232,7 @@ By default, this application is set up with the following port assignments in mi
 - Frontend: 5173
 
 This is built to work out of the box with minimal collisions, but if these ports are already occupied by other services on your machine, you can change them in the following ways:
-- _MySQL Server_: This is the trickiest to reconfigure, requiring you to alter config files. I recommend looking at [official documentation[(https://dev.mysql.com/doc/mysql-port-reference/en/mysql-port-reference-tables.html) for help here.
+- _MySQL Server_: This is the trickiest to reconfigure, requiring you to alter config files. I recommend looking at [official documentation](https://dev.mysql.com/doc/mysql-port-reference/en/mysql-port-reference-tables.html) for help here.
 - _API_: The API’s port is defined at the bottom of app.py in a line reading `app.run(host=”0.0.0.0”, port=8000, debug=app.config[“DEBUG”]`.
   
     If you would like to change this to another port, ensure that you also change the .env file found at /itms-frontend/.env to match with:
