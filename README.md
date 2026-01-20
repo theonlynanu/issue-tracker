@@ -123,7 +123,7 @@ itms-frontend/
 `backend/` contains the full API and authorization logic
 `itms-frontend` provides a functional but intentionally minimal UI
 
-## Running Locally (Summary)
+# Running Locally (Summary)
 
 This repository is designed to be runnable end-to-end on a local machine with minimal setup. The instructions below assume a standard development environment.
 
@@ -252,7 +252,7 @@ This is built to work out of the box with minimal collisions, but if these ports
 
 # Project Use
 You should now have a running backend (app.py) and frontend (Vite server). You can now access http://localhost:5173 (or whatever other port you've chosen) and immediately get pushed to the login screen. The following accounts are provided by `dump.sql`:
-|Role|username|password|
+|role|username|password|
 |:---|:---:|---:|
 |LEAD|lead1|leadpass|
 |DEVELOPER|dev1|devpass|
